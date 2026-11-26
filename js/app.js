@@ -549,7 +549,7 @@ function viewSettings() {
     <label class="btn file">Nhập từ file sao lưu<input type="file" accept="application/json,.json" data-act-change="import" hidden></label>
     <button class="btn ghost" data-act="resync">Tải lại toàn bộ từ máy chủ</button>
   </div></section>
-  <p class="foot">Sổ Nhà · v1.6 · 🧡</p>`;
+  <p class="foot">Sổ Nhà · v1.7 · 🧡</p>`;
 }
 
 const views = { today: viewToday, tasks: viewTasks, expenses: viewExpenses, settings: viewSettings };
@@ -756,7 +756,7 @@ function taskForm(task = {}, prefill = null) {
     </div>
     <input type="hidden" name="assignee" value="${t.assignee}">
 
-    <label class="check"><input type="checkbox" name="trackAmount" ${t.trackAmount ? 'checked' : ''}> Ghi chi phí mỗi lần làm (giá tiền, nơi mua)</label>
+    <label class="check cost-toggle"><input type="checkbox" name="trackAmount" ${t.trackAmount ? 'checked' : ''}> 💰 Ghi giá tiền & nơi mua mỗi lần làm</label>
     <div class="only-cost cost-box">
       <label>Sản phẩm hay mua<input name="buyItem" value="${esc(t.buyItem || '')}" placeholder="VD: Lõi lọc số 1 Kangaroo" autocomplete="off"></label>
       <div class="label">Nơi mua quen</div>
@@ -974,12 +974,34 @@ function updatePriceHint(form) {
   el.hidden = false;
 }
 
+/** Sửa một lần đã làm: ngày, giá tiền, nơi mua, ghi chú. */
+function logForm(l) {
+  const t = S.get('task', l.taskId) || {};
+  openSheet(`
+  <form class="form" data-form="log" data-id="${l.id}">
+    <h3>${esc(t.icon || '📝')} ${esc(t.title || 'Lần làm')}</h3>
+    <label>Ngày làm<input name="day" type="date" value="${esc(l.day)}" max="${D.today()}"></label>
+    <label>Số tiền<input name="amount" inputmode="decimal" value="${l.amount ? new Intl.NumberFormat('vi-VN').format(l.amount) : ''}" placeholder="VD: 850k hoặc 1tr2" autocomplete="off"></label>
+    ${t.category === 'bill' && !hasBuy(l.buy) ? '' : `<div class="label">Mua ở</div>${buyFields(l.buy || t.buy)}`}
+    <label>Ghi chú<input name="note" value="${esc(l.note || '')}" placeholder="Không bắt buộc"></label>
+    <div class="actions">
+      <button type="button" class="btn" data-act="openTask" data-id="${esc(l.taskId)}">Quay lại</button>
+      <button type="submit" class="btn primary">Lưu</button>
+    </div>
+  </form>`);
+  setTimeout(() => $('#sheet [name=amount]')?.focus(), 250);
+}
+
 function doneSheet(task) {
   openSheet(`
   <form class="form" data-form="done" data-id="${task.id}">
     <h3>${esc(task.icon || catOf(task.category).icon)} ${esc(task.title)}</h3>
     <label>Ngày làm<input name="day" type="date" value="${D.today()}" max="${D.today()}"></label>
-    ${task.trackAmount ? doneCostFields(task) : ''}
+    ${
+      task.trackAmount
+        ? doneCostFields(task)
+        : `<details class="cost-more"><summary>💰 Thêm giá tiền, nơi mua</summary><div class="cost-more-body">${doneCostFields(task)}</div></details>`
+    }
     <label>Ghi chú<input name="note" placeholder="Không bắt buộc"></label>
     <div class="actions">
       <button type="button" class="btn" data-act="closeSheet">Hủy</button>
@@ -1043,7 +1065,12 @@ function taskDetail(id) {
       </div>
       <div class="due-big ${st}">${t.finished ? 'Đã hoàn thành' : `${D.dueLabel(t.nextDue)}<small>${D.long(t.nextDue)}${t.type === 'lunar' ? ` · ${lunarShort(t.nextDue)}` : ''}</small>`}</div>
       ${t.note ? `<p class="note">${esc(t.note)}</p>` : ''}
-      ${buyCard(t, logs)}
+      ${
+        buyCard(t, logs) ||
+        (t.trackAmount
+          ? ''
+          : `<button class="btn cost-on" data-act="enableCost" data-id="${id}">💰 Ghi giá tiền & nơi mua cho việc này</button>`)
+      }
       <div class="actions">
         <button class="btn" data-act="editTask" data-id="${id}">Sửa</button>
         ${t.finished ? '' : `<button class="btn primary" data-act="doneSheet" data-id="${id}">Đánh dấu xong</button>`}
@@ -1055,7 +1082,7 @@ function taskDetail(id) {
               .join('')}</div>`
           : ''
       }
-      <div class="label">Lịch sử (${logs.length})</div>
+      <div class="label">Lịch sử (${logs.length})${logs.length ? ' · bấm một dòng để thêm/sửa giá' : ''}</div>
       <div class="history">${
         logs
           .slice(0, 50)
@@ -1064,7 +1091,7 @@ function taskDetail(id) {
             return { ...l, _chg: i >= 0 && priced[i + 1] ? pctChange(l.amount, priced[i + 1].amount) : 0 };
           })
           .map(
-            (l) => `<div class="hrow"><span>${D.weekday(l.day)} ${D.short(l.day)}/${l.day.slice(0, 4)}${
+            (l) => `<div class="hrow" data-act="editLog" data-id="${l.id}"><span>${D.weekday(l.day)} ${D.short(l.day)}/${l.day.slice(0, 4)}${
               hasBuy(l.buy) ? `<small>${shopOf(l.buy.kind)?.icon || '🛍️'} ${esc(shopLabel(l.buy))}</small>` : ''
             }${l.note ? `<small>${esc(l.note)}</small>` : ''}</span><span>${esc(who(l.by))}</span><b>${money(l.amount)}${chgBadge(l._chg)}</b>
               <button class="icon-btn small" data-act="delLog" data-id="${l.id}" aria-label="Xóa">×</button></div>`
@@ -1309,6 +1336,17 @@ const actions = {
     render();
   },
   newSubject: () => subjectForm(),
+  enableCost: (d) => {
+    taskForm({ ...S.get('task', d.id), trackAmount: true });
+    setTimeout(() => {
+      $('#sheet .cost-box')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      $('#sheet [name=buyItem]')?.focus();
+    }, 300);
+  },
+  editLog: (d) => {
+    const l = S.get('log', d.id);
+    if (l) logForm(l);
+  },
   subjGo: (d) => {
     subjFilter = d.id;
     taskFilter = 'all';
@@ -1502,13 +1540,29 @@ document.addEventListener('submit', async (e) => {
   else if (kind === 'expense') saveExpense(form);
   else if (kind === 'subject') saveSubject(form);
   else if (kind === 'shop') saveShop(form);
+  else if (kind === 'log') {
+    const l = S.get('log', form.dataset.id);
+    if (!l) return closeSheet();
+    const f = Object.fromEntries(new FormData(form));
+    const amount = f.amount ? parseMoney(f.amount) : null;
+    if (f.amount && amount == null) return toast('Số tiền chưa đúng');
+    const buy = readBuy(form);
+    S.put('log', { ...l, day: f.day || l.day, amount, note: (f.note || '').trim(), buy: buy || null });
+    const t = S.get('task', l.taskId);
+    if (t && amount && !t.trackAmount) S.put('task', { ...t, trackAmount: true, ...(buy && !hasBuy(t.buy) ? { buy } : {}) });
+    toast('Đã lưu');
+    taskDetail(l.taskId);
+  }
   else if (kind === 'done') {
     const t = S.get('task', form.dataset.id);
     const f = Object.fromEntries(new FormData(form));
     const amount = f.amount !== undefined ? parseMoney(f.amount) : null;
     if (f.amount && amount == null) return toast('Số tiền chưa đúng');
     closeSheet();
-    markDone(t, f.day || D.today(), amount, (f.note || '').trim(), t.trackAmount ? readBuy(form) : null);
+    const buy = readBuy(form);
+    // lần đầu nhập giá cho việc chưa bật ghi chi phí → tự bật để lần sau hỏi luôn
+    const task = !t.trackAmount && (amount || buy) ? { ...t, trackAmount: true } : t;
+    markDone(task, f.day || D.today(), amount, (f.note || '').trim(), buy);
   } else if (kind === 'members') {
     const f = Object.fromEntries(new FormData(form));
     S.put('config', { id: 'house', ...(S.get('config', 'house') || {}), members: [f.m0.trim() || 'Anh', f.m1.trim() || 'Em'] });
