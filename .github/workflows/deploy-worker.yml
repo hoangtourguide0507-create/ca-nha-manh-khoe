@@ -1,0 +1,47 @@
+# Tự đưa worker/worker.js lên Cloudflare mỗi khi file này đổi trên nhánh main.
+# Cần secret CLOUDFLARE_API_TOKEN (xem README → "Tự cập nhật Worker").
+name: Deploy Worker lên Cloudflare
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'worker/**'
+      - '.github/workflows/deploy-worker.yml'
+      - '.github/scripts/make-wrangler-config.mjs'
+  workflow_dispatch:
+
+concurrency: deploy-worker
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Kiểm tra mã truy cập Cloudflare
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Chưa có secret CLOUDFLARE_API_TOKEN. Vào Settings → Secrets and variables → Actions để thêm (xem README)."
+            exit 1
+          fi
+          echo "CLOUDFLARE_API_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+          if [ -n "$ACCOUNT" ]; then echo "CLOUDFLARE_ACCOUNT_ID=$ACCOUNT" >> "$GITHUB_ENV"; fi
+
+      - name: Đọc cấu hình Worker hiện tại (D1, ngày tương thích) và tạo wrangler.toml
+        run: node .github/scripts/make-wrangler-config.mjs
+
+      - name: Deploy
+        run: npx --yes wrangler@4 deploy
+
+      - name: Kiểm tra Worker chạy
+        run: |
+          sleep 5
+          curl -fsS "https://so-nha-api.hoangtourguide0507.workers.dev/" | tee /dev/stderr | grep -q '"configured":true'

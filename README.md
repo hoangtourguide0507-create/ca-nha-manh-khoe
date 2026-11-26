@@ -38,6 +38,7 @@ worker/worker.js                                              ← máy chủ (Cl
 | `js/push.js` | Bật hoặc tắt thông báo |
 | `sw.js` | Chạy offline, nhận thông báo |
 | `worker/worker.js` | API đồng bộ, gửi Web Push, lịch nhắc mỗi giờ |
+| `.github/workflows/deploy-worker.yml` | Tự deploy Worker lên Cloudflare khi `worker/` đổi |
 
 ---
 
@@ -86,7 +87,19 @@ Thông báo trên iPhone cần iOS 16.4 trở lên, và app phải được mở
 ## Cập nhật app sau này
 
 - **Sửa giao diện**: sửa file trên GitHub (bút chì ✏️ → Commit). Mở `sw.js`, tăng số phiên bản trong `CACHE` (hiện là `'sonha-v8'`) lên `v9`, `v10`… để điện thoại tải bản mới. Đóng hẳn app rồi mở lại.
-- **Sửa máy chủ**: dán lại `worker/worker.js` vào Cloudflare → Deploy. Dữ liệu trong D1 vẫn giữ nguyên.
+- **Sửa máy chủ**: tự động — mỗi lần `worker/worker.js` đổi trên nhánh `main`, GitHub Actions đưa Worker lên Cloudflare (xem bên dưới). Dữ liệu trong D1 vẫn giữ nguyên. Chưa cài thì dán tay `worker/worker.js` vào Cloudflare → Deploy như cũ.
+
+## Tự cập nhật Worker (làm một lần)
+
+1. **Tạo mã truy cập Cloudflare**: dash.cloudflare.com → ảnh đại diện góc phải → **Profile → API Tokens → Create Token** → mẫu **Edit Cloudflare Workers** → **Use template**.
+   - Mục *Permissions* bấm **+ Add more** → `Account` · `D1` · `Edit`.
+   - *Account Resources*: chọn tài khoản của bạn. *Zone Resources*: **All zones** (hoặc để mặc định).
+   - **Continue to summary → Create Token** → bấm **Copy** (mã chỉ hiện một lần).
+2. **Dán vào GitHub**: repo → **Settings → Secrets and variables → Actions → New repository secret**
+   - Name: `CLOUDFLARE_API_TOKEN` · Secret: dán mã vừa chép → **Add secret**.
+3. **Chạy thử**: repo → tab **Actions** → *Deploy Worker lên Cloudflare* → **Run workflow**. Có dấu ✓ xanh là xong.
+
+Workflow tự đọc database D1 đang gắn với Worker `so-nha-api` (không cần ghi ID vào repo), giữ nguyên Cron `0 * * * *`, giữ nguyên secret `HOUSE_KEY` nếu có. Nếu báo lỗi "Token thấy N tài khoản", thêm secret `CLOUDFLARE_ACCOUNT_ID` (Account ID ở trang *Workers & Pages*, cột bên phải).
 
 ## Gặp lỗi
 
