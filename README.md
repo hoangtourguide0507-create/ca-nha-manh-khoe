@@ -10,8 +10,11 @@ Web app nhắc việc nhà cho hai vợ chồng. Dữ liệu đồng bộ giữa
 - **Hóa đơn**: ghi số tiền mỗi lần trả, gõ tắt được như `850k` hay `1tr2`. Xem được biểu đồ các kỳ gần đây.
 - **Chi lớn**: ghi số tiền, ngày giờ, nhóm, cách thanh toán, người chi. Có tổng theo năm và theo nhóm. Từ một khoản chi có thể *tạo nhắc kèm* như bảo hiểm hay hết bảo hành.
 - **Hai người dùng chung**: mỗi việc giao cho một người hoặc cả hai, thông báo gửi đúng máy của người được giao.
-- **Thông báo**: máy chủ kiểm tra mỗi giờ và nhắc đúng giờ đã chọn. Việc quá hạn được nhắc lại mỗi ngày cho đến khi xong. Số việc cần làm hiện trên icon app.
+- **Thông báo**: máy chủ kiểm tra mỗi giờ và nhắc từ giờ đã chọn (0:00–23:00). Nếu lỡ một lượt thì lượt sau vẫn nhắc, mỗi việc chỉ nhắc một lần mỗi ngày. Việc quá hạn được nhắc lại mỗi ngày cho đến khi xong. Số việc cần làm hiện trên icon app.
 - **Chạy offline**: mất mạng vẫn dùng được, có mạng lại thì tự đồng bộ.
+
+**Link app:** https://hoangtourguide0507-create.github.io/ca-nha-manh-khoe/
+**Máy chủ:** https://so-nha-api.hoangtourguide0507.workers.dev (đã điền sẵn trong app)
 
 ## Cấu trúc
 
@@ -24,7 +27,7 @@ worker/worker.js                                              ← máy chủ (Cl
 |---|---|
 | `js/app.js` | Giao diện, các màn hình, form |
 | `js/schedule.js` | Tính ngày đến hạn |
-| `js/store.js` | Lưu trên máy và đồng bộ |
+| `js/store.js` | Lưu trên máy và đồng bộ. Địa chỉ Worker mặc định nằm ở `DEFAULT_API` |
 | `js/push.js` | Bật hoặc tắt thông báo |
 | `sw.js` | Chạy offline, nhận thông báo |
 | `worker/worker.js` | API đồng bộ, gửi Web Push, lịch nhắc mỗi giờ |
@@ -35,10 +38,10 @@ worker/worker.js                                              ← máy chủ (Cl
 
 ### Bước 1 — Đưa code lên GitHub
 
-1. Vào github.com → **New repository** → đặt tên `so-nha` → chọn **Public** → **Create repository**.
-2. Bấm **uploading an existing file**, kéo **toàn bộ file và thư mục** trong thư mục `so-nha` vào (giữ nguyên cấu trúc) → **Commit changes**.
+1. Vào github.com → **New repository** → đặt tên (nhà mình dùng `ca-nha-manh-khoe`) → chọn **Public** → **Create repository**.
+2. Bấm **uploading an existing file**, kéo **toàn bộ file và thư mục** vào (giữ nguyên cấu trúc) → **Commit changes**.
 3. Vào **Settings → Pages** → mục *Branch* chọn `main`, thư mục `/ (root)` → **Save**.
-4. Đợi 1–2 phút. App sẽ chạy ở `https://<tên-github>.github.io/so-nha/`.
+4. Đợi 1–2 phút. App sẽ chạy ở `https://<tên-github>.github.io/<tên-repo>/`, của nhà mình là https://hoangtourguide0507-create.github.io/ca-nha-manh-khoe/
 
 ### Bước 2 — Tạo máy chủ trên Cloudflare
 
@@ -56,6 +59,7 @@ worker/worker.js                                              ← máy chủ (Cl
    Nếu không đặt, ai biết địa chỉ Worker cũng xem và sửa được dữ liệu. Có thể thêm mã nhà bất cứ lúc nào mà không phải sửa code.
 6. **Settings → Trigger Events → Add → Cron Triggers** → nhập `0 * * * *` (chạy mỗi giờ) → **Add**.
 7. Chép địa chỉ Worker, dạng `https://so-nha-api.<tên-bạn>.workers.dev`. Mở địa chỉ này trên trình duyệt, thấy `"configured":true` là xong.
+8. Mở `js/store.js`, sửa dòng `DEFAULT_API` thành địa chỉ Worker này để app tự điền sẵn trên mọi máy. Nhà mình đã điền: `https://so-nha-api.hoangtourguide0507.workers.dev`.
 
 > Không cần tạo khóa VAPID. Worker tự tạo khóa ở lần bật thông báo đầu tiên và lưu vào D1.
 
@@ -64,7 +68,7 @@ worker/worker.js                                              ← máy chủ (Cl
 1. Mở link GitHub Pages bằng **Safari** → bấm nút **Chia sẻ** → **Thêm vào MH chính**.
 2. Mở **Sổ Nhà** từ màn hình chính (không mở trong Safari).
 3. Vào tab **Cài đặt**:
-   - Dán *Địa chỉ Worker* (bỏ trống *Mã nhà* nếu không đặt) → **Lưu & kiểm tra**.
+   - *Địa chỉ Worker* đã được điền sẵn, không cần nhập. Chỉ khi đặt `HOUSE_KEY` mới cần nhập *Mã nhà* → **Lưu & kiểm tra**.
    - *Thành viên*: sửa tên hai người (chỉ cần làm trên một máy, máy kia tự cập nhật) → chọn **Tôi là** đúng người.
    - **Bật thông báo** → cho phép → bấm **Gửi thử** để kiểm tra.
 
@@ -74,7 +78,7 @@ Thông báo trên iPhone cần iOS 16.4 trở lên, và app phải được mở
 
 ## Cập nhật app sau này
 
-- **Sửa giao diện**: sửa file trên GitHub (bút chì ✏️ → Commit). Mở `sw.js`, tăng `CACHE = 'sonha-v1'` lên `v2` để điện thoại tải bản mới. Đóng hẳn app rồi mở lại.
+- **Sửa giao diện**: sửa file trên GitHub (bút chì ✏️ → Commit). Mở `sw.js`, tăng số phiên bản trong `CACHE` (hiện là `'sonha-v3'`) lên `v4`, `v5`… để điện thoại tải bản mới. Đóng hẳn app rồi mở lại.
 - **Sửa máy chủ**: dán lại `worker/worker.js` vào Cloudflare → Deploy. Dữ liệu trong D1 vẫn giữ nguyên.
 
 ## Gặp lỗi
@@ -85,7 +89,7 @@ Thông báo trên iPhone cần iOS 16.4 trở lên, và app phải được mở
 | "Chưa gắn D1 database…" | Làm lại Bước 2.4, tên biến phải đúng là `DB` |
 | Không thấy nút bật thông báo hoạt động | Phải mở app từ màn hình chính, không mở trong Safari |
 | Gửi thử được nhưng không có nhắc tự động | Kiểm tra Cron Trigger `0 * * * *` và giờ nhắc của việc. Bấm *Nhắc ngay các việc đến hạn* để thử |
-| Đổi máy hoặc cài lại | Nhập lại địa chỉ Worker và mã nhà, dữ liệu tự tải về |
+| Đổi máy hoặc cài lại | Địa chỉ Worker tự điền sẵn, dữ liệu tự tải về (nhập lại mã nhà nếu có đặt) |
 
 Nên **Xuất sao lưu** (Cài đặt → Dữ liệu) định kỳ để giữ một bản dự phòng.
 

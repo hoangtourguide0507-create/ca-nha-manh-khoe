@@ -183,7 +183,9 @@ const forUser = (t, user) => t.assignee === 'all' || t.assignee === undefined ||
 async function runReminders(env, { force = false } = {}) {
   const { day, hour } = vnNow();
   const tasks = await loadTasks(env);
-  let due = tasks.filter((t) => isDue(t, day) && (force || Number(t.remindHour ?? 8) === hour));
+  // Nhắc từ giờ đã chọn trở đi: nếu Cron lỡ một lượt thì lượt sau vẫn nhắc.
+  // Bảng `notified` đảm bảo mỗi việc chỉ nhắc một lần mỗi ngày.
+  let due = tasks.filter((t) => isDue(t, day) && (force || hour >= Number(t.remindHour ?? 8)));
 
   if (!force && due.length) {
     const { results } = await env.DB.prepare('SELECT task_id FROM notified WHERE day = ?').bind(day).all();

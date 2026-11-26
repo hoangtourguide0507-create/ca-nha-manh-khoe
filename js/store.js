@@ -22,13 +22,18 @@ function load() {
   return blank();
 }
 
+// Địa chỉ Worker của nhà mình, điền sẵn để không phải nhập trên từng máy.
+export const DEFAULT_API = 'https://so-nha-api.hoangtourguide0507.workers.dev';
+
 let state = load();
 export const device = (() => {
+  let saved = {};
   try {
-    return { api: '', key: '', me: null, ...JSON.parse(localStorage.getItem(DEVICE_KEY)) };
-  } catch {
-    return { api: '', key: '', me: null };
-  }
+    saved = JSON.parse(localStorage.getItem(DEVICE_KEY)) || {};
+  } catch {}
+  const d = { api: '', key: '', me: null, ...saved };
+  if (!d.api) d.api = DEFAULT_API; // máy cũ chưa nhập hoặc để trống → dùng địa chỉ mặc định
+  return d;
 })();
 
 const listeners = new Set();
