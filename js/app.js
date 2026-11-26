@@ -549,7 +549,7 @@ function viewSettings() {
     <label class="btn file">Nhập từ file sao lưu<input type="file" accept="application/json,.json" data-act-change="import" hidden></label>
     <button class="btn ghost" data-act="resync">Tải lại toàn bộ từ máy chủ</button>
   </div></section>
-  <p class="foot">Sổ Nhà · v1.7 · 🧡</p>`;
+  <p class="foot">Sổ Nhà · v1.8 · 🧡</p>`;
 }
 
 const views = { today: viewToday, tasks: viewTasks, expenses: viewExpenses, settings: viewSettings };
@@ -758,13 +758,16 @@ function taskForm(task = {}, prefill = null) {
 
     <label class="check cost-toggle"><input type="checkbox" name="trackAmount" ${t.trackAmount ? 'checked' : ''}> 💰 Ghi giá tiền & nơi mua mỗi lần làm</label>
     <div class="only-cost cost-box">
-      <label>Sản phẩm hay mua<input name="buyItem" value="${esc(t.buyItem || '')}" placeholder="VD: Lõi lọc số 1 Kangaroo" autocomplete="off"></label>
+      <div class="row2 price-row">
+        <label>Sản phẩm hay mua<input name="buyItem" value="${esc(t.buyItem || '')}" placeholder="VD: Lõi lọc số 1" autocomplete="off"></label>
+        <label>💰 Giá mỗi lần<input name="price" inputmode="decimal" value="${t.price ? new Intl.NumberFormat('vi-VN').format(t.price) : ''}" placeholder="VD: 320k" autocomplete="off"></label>
+      </div>
       <div class="label">Nơi mua quen</div>
       ${buyFields(t.buy)}
       <label>Nhắc đặt hàng trước<select name="orderBefore">${ORDER_OPTS.map(
         (n) => `<option value="${n}" ${n === (Number(t.orderBefore) || 0) ? 'selected' : ''}>${n ? `${n} ngày (để kịp giao hàng)` : 'Không nhắc'}</option>`
       ).join('')}</select></label>
-      <div class="hint">Không bắt buộc. Hóa đơn điện nước thì bỏ trống. Mỗi lần đánh dấu xong sẽ hỏi giá và nơi mua, điền sẵn theo lần trước.</div>
+      <div class="hint">Mỗi lần đánh dấu xong, app điền sẵn giá và nơi mua này để bạn xác nhận hoặc sửa. Giá được cập nhật theo lần trả gần nhất.</div>
     </div>
     <label>Ghi chú<textarea name="note" rows="2" placeholder="VD: Mã KH điện PE01…">${esc(t.note || '')}</textarea></label>
 
@@ -867,6 +870,7 @@ function saveTask(form) {
   const old = form.dataset.id ? S.get('task', form.dataset.id) : null;
   const title = f.title.trim();
   if (!title) return toast('Nhập tên việc');
+  if (f.trackAmount && f.price && parseMoney(f.price) == null) return toast('Giá chưa đúng (VD: 320k, 1tr2)');
   const task = {
     ...(old || {}),
     title,
@@ -878,6 +882,7 @@ function saveTask(form) {
     assignee: f.assignee === 'all' ? 'all' : Number(f.assignee),
     trackAmount: !!f.trackAmount,
     buyItem: (f.buyItem || '').trim(),
+    price: f.trackAmount ? parseMoney(f.price) || null : (old?.price ?? null),
     orderBefore: f.trackAmount ? Number(f.orderBefore) || 0 : 0,
     buy: f.trackAmount ? readBuy(form) : (old?.buy ?? null),
     note: f.note.trim(),
@@ -925,7 +930,7 @@ function markDone(task, day = D.today(), amount = null, note = '', buy = null) {
     ...(buy ? { buy } : {}),
   });
   const next = D.afterDone(task, day);
-  S.put('task', { ...task, ...next, ...(buy ? { buy } : {}) });
+  S.put('task', { ...task, ...next, ...(buy ? { buy } : {}), ...(amount ? { price: amount } : {}) });
   const msg = next.finished ? `Xong “${task.title}”` : `Xong · lần tới ${D.short(next.nextDue)}`;
   toast(msg, 'Hoàn tác', () => {
     S.remove('log', log.id);
@@ -939,7 +944,7 @@ function doneCostFields(task) {
     .sort((a, b) => (b.doneAt || '').localeCompare(a.doneAt || ''))[0];
   const showShop = hasBuy(task.buy) || task.category !== 'bill';
   return `
-    <label>Số tiền<input name="amount" inputmode="decimal" placeholder="${last ? `Lần trước ${money(last.amount)}${last.buy ? ' · ' + esc(shopLabel(last.buy)) : ''}` : 'VD: 850k hoặc 1tr2'}" autocomplete="off"></label>
+    <label>Số tiền<input name="amount" inputmode="decimal" value="${task.price ? new Intl.NumberFormat('vi-VN').format(task.price) : ''}" placeholder="${last ? `Lần trước ${money(last.amount)}${last.buy ? ' · ' + esc(shopLabel(last.buy)) : ''}` : 'VD: 850k hoặc 1tr2'}" autocomplete="off"></label>
     <div class="price-hint" data-price-hint hidden></div>
     ${showShop ? `<div class="label">Mua ở</div>${buyFields(task.buy)}` : ''}`;
 }
@@ -1014,7 +1019,7 @@ function doneSheet(task) {
 function buyCard(t, logs) {
   const priced = logs.filter((l) => l.amount);
   const b = hasBuy(t.buy) ? t.buy : logs.find((l) => hasBuy(l.buy))?.buy;
-  if (!b && !priced.length && !t.buyItem) return '';
+  if (!b && !priced.length && !t.buyItem && !t.price) return '';
   const lastChg = priced.length > 1 ? pctChange(priced[0].amount, priced[1].amount) : 0;
   const orderLine = Number(t.orderBefore)
     ? t.orderedFor && t.orderedFor === t.nextDue
@@ -1034,6 +1039,9 @@ function buyCard(t, logs) {
   <div class="buy-card">
     ${t.buyItem ? `<div class="buy-item">📦 ${esc(t.buyItem)}</div>` : ''}
     ${b ? `<div class="buy-shop">${shop?.icon || '🛍️'} <b>${esc(shopLabel(b))}</b>${b.name && shop ? `<span>${shop.name}</span>` : ''}</div>` : ''}
+    ${
+      !priced.length && t.price ? `<div class="buy-stats"><div><small>Giá mỗi lần</small><b>${money(t.price)}</b><span>chưa có lần trả nào</span></div></div>` : ''
+    }
     ${
       priced.length
         ? `<div class="buy-stats">

@@ -373,3 +373,5 @@ details.cost-more[open] summary { margin-bottom: 6px; }
 .cost-more-body { display: grid; gap: 12px; padding-bottom: 10px; }
 .hrow[data-act="editLog"] { cursor: pointer; }
 .hrow[data-act="editLog"]:active { background: var(--accent-soft); }
+.price-row { grid-template-columns: 1.3fr 1fr; }
+.price-row input[name="price"] { font-weight: 800; color: var(--accent); }
