@@ -259,3 +259,33 @@ label.check input { width: 22px; height: 22px; min-height: 0; accent-color: var(
 #toast button { border: none; background: none; color: #ffb3c4; font-weight: 900; padding: 0; white-space: nowrap; }
 
 .foot { text-align: center; color: var(--muted); font-size: 12px; font-weight: 700; }
+
+/* ---------- Người & thú cưng ---------- */
+.people { display: flex; gap: 12px; overflow-x: auto; margin: 0 -16px 14px; padding: 4px 16px 6px; scrollbar-width: none; }
+.people::-webkit-scrollbar { display: none; }
+.person { border: none; background: none; display: grid; justify-items: center; gap: 5px; width: 64px; flex: none; padding: 0; color: var(--text); font-size: 12.5px; font-weight: 800; }
+.person .av { width: 58px; height: 58px; border-radius: 50%; background: var(--surface); box-shadow: var(--shadow); display: grid; place-items: center; font-size: 29px; border: 3px solid #fff; transition: 0.15s; }
+.person.on .av { border-color: var(--accent); background: var(--accent-soft); transform: scale(1.05); }
+.person.on .nm { color: var(--accent); }
+.person .nm { max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.person.add { color: var(--accent); }
+.person.add .av { background: transparent; border: 2px dashed #f2bccb; box-shadow: none; font-size: 24px; color: var(--accent); }
+.person:active .av { transform: scale(0.92); }
+
+.person-head { display: flex; align-items: center; gap: 14px; padding: 14px; margin-bottom: 16px; background: linear-gradient(135deg, #fff 40%, #fff0f4); }
+.av.big { width: 58px; height: 58px; border-radius: 50%; background: var(--accent-soft); display: grid; place-items: center; font-size: 30px; flex: none; }
+.btn.small { padding: 7px 14px; font-size: 13px; border-radius: 12px; }
+
+.meta .tag { color: var(--accent); font-weight: 800; }
+.chip.add { border-style: dashed; border-color: #f2bccb; color: var(--accent); background: transparent; }
+.subj-pick { margin-bottom: 0; }
+.inline-add { display: grid; gap: 10px; background: #fff5f8; border-radius: 18px; padding: 12px; }
+.inline-add[hidden] { display: none; }
+.icon-pick { display: flex; flex-wrap: wrap; gap: 6px; }
+.icon-pick button { width: 42px; height: 42px; border-radius: 12px; border: 2px solid var(--line); background: #fffaf6; font-size: 22px; display: grid; place-items: center; padding: 0; }
+.icon-pick button.on { border-color: var(--accent); background: var(--accent-soft); }
+
+.prow { display: flex; align-items: center; gap: 12px; padding: 6px 2px 10px; border-bottom: 2px dashed var(--line); cursor: pointer; }
+.prow .av { width: 40px; height: 40px; border-radius: 50%; background: var(--accent-soft); display: grid; place-items: center; font-size: 21px; flex: none; }
+.prow b { flex: 1; font-weight: 800; }
+.prow .chev { color: var(--muted); font-size: 20px; }

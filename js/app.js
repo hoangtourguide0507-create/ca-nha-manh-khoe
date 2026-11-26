@@ -43,6 +43,36 @@ const TEMPLATES = [
 
 const catOf = (id, list = CATS) => list.find((c) => c.id === id) || list[list.length - 1];
 
+// ---------- Người & thú cưng (mỗi người là một bản ghi config 'subject:<id>') ----------
+const SUBJ_ICONS = ['🐱', '🐈‍⬛', '🐶', '🐰', '🐹', '🐟', '🐦', '👶', '👧', '👦', '👩', '👨', '👵', '👴', '🕯️', '🪴'];
+function subjects() {
+  return S.all('config')
+    .filter((c) => String(c.id).startsWith('subject:') && c.name)
+    .sort((a, b) => (a.created || 0) - (b.created || 0));
+}
+const subjOf = (id) => subjects().find((p) => p.id === id) || null;
+const taskSubjects = (t) => (t.subjects || []).map(subjOf).filter(Boolean);
+const norm = (s) => String(s || '').normalize('NFC').toLowerCase();
+/** Tên có xuất hiện như một từ riêng trong câu không ("Má" khớp "Giỗ Má", không khớp "Máy lọc"). */
+function mentions(text, name) {
+  const n = norm(name).trim();
+  if (!n) return false;
+  const re = new RegExp(`(^|[^\\p{L}\\p{N}])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\p{L}\\p{N}])`, 'u');
+  return re.test(norm(text));
+}
+/** Tạo người/thú cưng mới và tự gắn vào các việc có tên đó trong tiêu đề. */
+function createSubject(name, icon) {
+  const p = S.put('config', { id: `subject:${S.uid()}`, name, icon: icon || '🙂', created: Date.now() });
+  let linked = 0;
+  for (const t of S.all('task')) {
+    if (mentions(t.title, name) && !(t.subjects || []).includes(p.id)) {
+      S.put('task', { ...t, subjects: [...(t.subjects || []), p.id] });
+      linked++;
+    }
+  }
+  return { p, linked };
+}
+
 // ---------- Tiện ích ----------
 const $ = (s, root = document) => root.querySelector(s);
 const esc = (s) =>
@@ -87,6 +117,7 @@ function fmtDateTime(s) {
 let tab = localStorage.getItem('sonha:tab') || 'today';
 let expYear = new Date().getFullYear();
 let taskFilter = 'all';
+let subjFilter = null;
 
 function activeTasks() {
   return S.all('task').filter((t) => !t.finished && t.nextDue);
@@ -101,7 +132,10 @@ function taskCard(t, today = D.today()) {
     <div class="ico" data-cat="${esc(t.category || 'other')}">${esc(t.icon || catOf(t.category).icon)}</div>
     <div class="body">
       <div class="title">${esc(t.title)}</div>
-      <div class="meta"><span class="due">${D.dueLabel(t.nextDue, today)}</span><span>${D.recurLabel(t)}</span><span>${esc(who(t.assignee))}</span></div>
+      <div class="meta"><span class="due">${D.dueLabel(t.nextDue, today)}</span><span>${D.recurLabel(t)}</span>${taskSubjects(t)
+        .filter((p) => !mentions(t.title, p.name))
+        .map((p) => `<span class="tag">${esc(p.icon)} ${esc(p.name)}</span>`)
+        .join('')}<span>${esc(who(t.assignee))}</span></div>
     </div>
     ${t.finished ? '' : `<button class="done-btn" data-act="quickDone" data-id="${t.id}" aria-label="Đã xong">${ICON.check}</button>`}
   </div>`;
@@ -151,9 +185,20 @@ function viewToday() {
   ${section('Sắp tới', soon, t)}`;
 }
 
+function peopleRow() {
+  return `<div class="people">${subjects()
+    .map(
+      (p) => `<button class="person ${subjFilter === p.id ? 'on' : ''}" data-act="subj" data-id="${esc(p.id)}"><span class="av">${esc(p.icon)}</span><span class="nm">${esc(p.name)}</span></button>`
+    )
+    .join('')}<button class="person add" data-act="newSubject"><span class="av">＋</span><span class="nm">Thêm</span></button></div>`;
+}
+
 function viewTasks() {
   const t = D.today();
-  const all = S.all('task');
+  const everything = S.all('task');
+  if (subjFilter && !subjOf(subjFilter)) subjFilter = null;
+  const subj = subjFilter ? subjOf(subjFilter) : null;
+  const all = subj ? everything.filter((x) => (x.subjects || []).includes(subj.id)) : everything;
   const filters = [{ id: 'all', name: 'Tất cả' }, ...CATS.filter((c) => all.some((x) => x.category === c.id))];
   if (!filters.some((f) => f.id === taskFilter)) taskFilter = 'all';
   const shown = all.filter((x) => taskFilter === 'all' || x.category === taskFilter);
@@ -161,12 +206,26 @@ function viewTasks() {
   const finished = shown.filter((x) => x.finished).sort((a, b) => (b.lastDone || '').localeCompare(a.lastDone || ''));
   const groups = CATS.map((c) => ({ c, list: active.filter((x) => (x.category || 'other') === c.id) })).filter((g) => g.list.length);
   return `
-  <header class="top"><div><div class="eyebrow">${all.filter((x) => !x.finished).length} việc đang theo dõi</div><h1>Tất cả việc</h1></div>${syncBadge()}</header>
+  <header class="top"><div><div class="eyebrow">${everything.filter((x) => !x.finished).length} việc đang theo dõi</div><h1>${subj ? `Việc của ${esc(subj.name)}` : 'Tất cả việc'}</h1></div>${syncBadge()}</header>
+  ${peopleRow()}
+  ${
+    subj
+      ? `<div class="card person-head"><div class="av big">${esc(subj.icon)}</div><div class="body"><div class="title">${esc(subj.name)}</div><div class="meta"><span>${all.filter((x) => !x.finished).length} việc đang theo dõi</span>${
+          all.some((x) => x.finished) ? `<span>${all.filter((x) => x.finished).length} đã xong</span>` : ''
+        }</div></div><button class="btn small" data-act="editSubject" data-id="${esc(subj.id)}">Sửa</button></div>`
+      : ''
+  }
   <div class="chips">${filters
     .map((f) => `<button class="chip ${f.id === taskFilter ? 'on' : ''}" data-act="filter" data-f="${f.id}">${f.icon ? f.icon + ' ' : ''}${f.name}</button>`)
     .join('')}</div>
   ${groups.map((g) => section(`${g.c.icon} ${g.c.name}`, g.list, t)).join('')}
-  ${!all.length ? `<div class="empty"><div class="big">📝</div><div>Chưa có việc nào. Bấm <b>+</b> để thêm.</div></div>` : ''}
+  ${
+    !all.length
+      ? subj
+        ? `<div class="empty"><div class="big">${esc(subj.icon)}</div><div>Chưa có việc nào cho ${esc(subj.name)}.</div><button class="btn primary" data-act="fab">Thêm việc cho ${esc(subj.name)}</button></div>`
+        : `<div class="empty"><div class="big">📝</div><div>Chưa có việc nào. Bấm <b>+</b> để thêm.</div></div>`
+      : ''
+  }
   ${finished.length ? `<details class="finished"><summary>Đã hoàn thành (${finished.length})</summary>${finished.map((x) => taskCard(x, t)).join('')}</details>` : ''}`;
 }
 
@@ -230,7 +289,20 @@ function viewSettings() {
     <div class="hint">${statusText(st)}</div>
   </form></section>
 
-  <section><h2>Thành viên</h2>
+  <section><h2>Người & thú cưng trong nhà</h2>
+  <div class="card form">
+    ${
+      subjects()
+        .map((p) => {
+          const n = S.all('task').filter((x) => !x.finished && (x.subjects || []).includes(p.id)).length;
+          return `<div class="prow" data-act="editSubject" data-id="${esc(p.id)}"><span class="av">${esc(p.icon)}</span><b>${esc(p.name)}</b><span class="hint">${n} việc</span><span class="chev">›</span></div>`;
+        })
+        .join('') || '<div class="hint">Chưa có ai. Thêm thú cưng, ông bà, con cái… để gắn vào việc và xem riêng việc của từng người.</div>'
+    }
+    <button class="btn" data-act="newSubject">＋ Thêm người hoặc thú cưng</button>
+  </div></section>
+
+  <section><h2>Người dùng app (2 máy)</h2>
   <form class="card form" data-form="members">
     <div class="row2">
       <label>Người 1<input name="m0" value="${esc(m[0])}" maxlength="20"></label>
@@ -264,7 +336,7 @@ function viewSettings() {
     <label class="btn file">Nhập từ file sao lưu<input type="file" accept="application/json,.json" data-act-change="import" hidden></label>
     <button class="btn ghost" data-act="resync">Tải lại toàn bộ từ máy chủ</button>
   </div></section>
-  <p class="foot">Sổ Nhà · v1.3 · 🧡</p>`;
+  <p class="foot">Sổ Nhà · v1.4 · 🧡</p>`;
 }
 
 const views = { today: viewToday, tasks: viewTasks, expenses: viewExpenses, settings: viewSettings };
@@ -408,6 +480,18 @@ function taskForm(task = {}, prefill = null) {
     </div>
     <label>Nhóm<select name="category">${CATS.map((c) => `<option value="${c.id}" ${c.id === t.category ? 'selected' : ''}>${c.icon} ${c.name}</option>`).join('')}</select></label>
 
+    <div class="label">Liên quan đến</div>
+    <div class="chips subj-pick" data-subjects>${subjChips(t.subjects || [])}</div>
+    <div class="inline-add" hidden>
+      <div class="row-icon">
+        <label class="icon-input">Biểu tượng<input name="newSubjIcon" maxlength="4" placeholder="🐱" autocomplete="off"></label>
+        <label>Tên<input name="newSubjName" placeholder="VD: Thúi, Bé Na, Bà nội" autocomplete="off"></label>
+      </div>
+      <div class="icon-pick">${SUBJ_ICONS.map((i) => `<button type="button" data-act="pickInlineIcon" data-v="${i}">${i}</button>`).join('')}</div>
+      <button type="button" class="btn" data-act="saveSubjInline">Thêm vào danh sách</button>
+    </div>
+    <input type="hidden" name="subjects" value="${esc((t.subjects || []).join(','))}">
+
     <div class="label">Kiểu lặp</div>
     <div class="seg tight" data-seg="type">
       <button type="button" data-v="interval" class="${t.type === 'interval' ? 'on' : ''}">Sau N ngày</button>
@@ -469,12 +553,34 @@ function taskForm(task = {}, prefill = null) {
   </form>`);
 }
 
+function subjChips(sel) {
+  return (
+    subjects()
+      .map((p) => `<button type="button" class="chip ${sel.includes(p.id) ? 'on' : ''}" data-act="pickSubj" data-id="${esc(p.id)}">${esc(p.icon)} ${esc(p.name)}</button>`)
+      .join('') + `<button type="button" class="chip add" data-act="addSubjInline">＋ Thêm</button>`
+  );
+}
+const selectedSubj = (form) => String(form.elements.subjects.value || '').split(',').filter(Boolean);
+function setSelectedSubj(form, ids) {
+  form.elements.subjects.value = ids.join(',');
+  form.querySelector('[data-subjects]').innerHTML = subjChips(ids);
+}
+/** Gõ tên việc có chứa tên người/thú cưng → tự chọn (trừ khi đã bỏ chọn bằng tay). */
+function autoPickSubj(form) {
+  if (!form?.elements.subjects) return;
+  const off = (form.dataset.subjOff || '').split(',');
+  const sel = selectedSubj(form);
+  const add = subjects().filter((p) => !sel.includes(p.id) && !off.includes(p.id) && mentions(form.elements.title.value, p.name));
+  if (add.length) setSelectedSubj(form, [...sel, ...add.map((p) => p.id)]);
+}
+
 function applyTemplate(form, x) {
   const set = (n, v) => {
     const el = form.elements[n];
     if (el) el.value = v;
   };
   set('title', x.title);
+  autoPickSubj(form);
   set('icon', x.icon);
   set('category', x.category);
   setSeg(form, 'type', x.type);
@@ -573,6 +679,7 @@ function saveTask(form) {
   } else {
     task.nextDue = f.onceDue || D.today();
   }
+  task.subjects = String(f.subjects || '').split(',').filter((id) => id && subjOf(id));
   if (!old) task.createdBy = me();
   S.put('task', task);
   closeSheet();
@@ -658,6 +765,46 @@ function taskDetail(id) {
     const panel = $('#sheet .sheet-panel');
     if (panel && S.get('task', id)) panel.innerHTML = '<div class="grab"></div>' + render();
   });
+}
+
+// ---------- Form người & thú cưng ----------
+function subjectForm(p = {}) {
+  const isNew = !p.id;
+  const n = isNew ? 0 : S.all('task').filter((x) => (x.subjects || []).includes(p.id)).length;
+  openSheet(`
+  <form class="form" data-form="subject" data-id="${esc(p.id || '')}">
+    <h3>${isNew ? 'Thêm người hoặc thú cưng' : 'Sửa'}</h3>
+    <div class="row-icon">
+      <label class="icon-input">Biểu tượng<input name="icon" value="${esc(p.icon || '')}" maxlength="4" placeholder="🐱" autocomplete="off"></label>
+      <label>Tên<input name="name" required value="${esc(p.name || '')}" maxlength="24" placeholder="VD: Thúi, Bé Na, Bà nội" autocomplete="off"></label>
+    </div>
+    <div class="icon-pick">${SUBJ_ICONS.map((i) => `<button type="button" class="${i === p.icon ? 'on' : ''}" data-act="pickIcon" data-v="${i}">${i}</button>`).join('')}</div>
+    <div class="hint">${isNew ? 'Các việc đã có chứa tên này (VD: “Thay cát cho Thúi”) sẽ được gắn tự động.' : `Đang gắn với ${n} việc.`}</div>
+    <div class="actions">
+      <button type="button" class="btn" data-act="closeSheet">Hủy</button>
+      <button type="submit" class="btn primary">${isNew ? 'Thêm' : 'Lưu'}</button>
+    </div>
+    ${isNew ? '' : `<button type="button" class="btn danger ghost" data-act="delSubject" data-id="${esc(p.id)}">Xóa khỏi danh sách</button>`}
+  </form>`);
+  if (isNew) setTimeout(() => $('#sheet [name=name]')?.focus(), 250);
+}
+
+function saveSubject(form) {
+  const f = Object.fromEntries(new FormData(form));
+  const name = f.name.trim();
+  if (!name) return toast('Nhập tên');
+  const icon = f.icon.trim() || '🙂';
+  const old = form.dataset.id ? subjOf(form.dataset.id) : null;
+  if (!old && subjects().some((p) => norm(p.name) === norm(name))) return toast(`Đã có ${name} trong danh sách`);
+  closeSheet();
+  if (old) {
+    S.put('config', { ...old, name, icon });
+    return toast('Đã lưu');
+  }
+  const { p, linked } = createSubject(name, icon);
+  subjFilter = p.id;
+  if (tab !== 'settings') actions.tab({ tab: 'tasks' });
+  toast(linked ? `Đã thêm ${name} · gắn ${linked} việc có tên ${name}` : `Đã thêm ${name}`);
 }
 
 // ---------- Form chi tiêu ----------
@@ -777,7 +924,59 @@ const actions = {
     closeSheet();
   },
   followUp: (d) => followUp(S.get('expense', d.id)),
-  fab: () => (tab === 'expenses' ? expenseForm() : taskForm()),
+  fab: () => (tab === 'expenses' ? expenseForm() : taskForm({}, tab === 'tasks' && subjFilter ? { subjects: [subjFilter] } : null)),
+  subj: (d) => {
+    subjFilter = subjFilter === d.id ? null : d.id;
+    taskFilter = 'all';
+    render();
+  },
+  newSubject: () => subjectForm(),
+  editSubject: (d) => subjectForm(subjOf(d.id) || {}),
+  delSubject: (d) => {
+    const p = subjOf(d.id);
+    if (!p || !confirm(`Xóa “${p.name}” khỏi danh sách? Các việc vẫn giữ nguyên, chỉ bỏ gắn tên.`)) return;
+    for (const t of S.all('task')) {
+      if ((t.subjects || []).includes(p.id)) S.put('task', { ...t, subjects: t.subjects.filter((x) => x !== p.id) });
+    }
+    S.remove('config', p.id);
+    if (subjFilter === p.id) subjFilter = null;
+    closeSheet();
+    toast('Đã xóa');
+  },
+  pickIcon: (d, el) => {
+    const form = el.closest('form');
+    form.elements.icon.value = d.v;
+    form.querySelectorAll('.icon-pick button').forEach((b) => b.classList.toggle('on', b === el));
+  },
+  pickSubj: (d, el) => {
+    const form = el.closest('form');
+    const sel = selectedSubj(form);
+    const on = sel.includes(d.id);
+    if (on) form.dataset.subjOff = [form.dataset.subjOff || '', d.id].join(',');
+    setSelectedSubj(form, on ? sel.filter((x) => x !== d.id) : [...sel, d.id]);
+  },
+  addSubjInline: (d, el) => {
+    const box = el.closest('form').querySelector('.inline-add');
+    box.hidden = !box.hidden;
+    if (!box.hidden) box.querySelector('[name=newSubjName]').focus();
+  },
+  pickInlineIcon: (d, el) => {
+    const form = el.closest('form');
+    form.elements.newSubjIcon.value = d.v;
+    form.querySelectorAll('.inline-add .icon-pick button').forEach((b) => b.classList.toggle('on', b === el));
+  },
+  saveSubjInline: (d, el) => {
+    const form = el.closest('form');
+    const name = form.elements.newSubjName.value.trim();
+    if (!name) return toast('Nhập tên');
+    const existing = subjects().find((p) => norm(p.name) === norm(name));
+    const p = existing || createSubject(name, form.elements.newSubjIcon.value.trim()).p;
+    setSelectedSubj(form, [...new Set([...selectedSubj(form), p.id])]);
+    form.elements.newSubjName.value = '';
+    form.elements.newSubjIcon.value = '';
+    form.querySelector('.inline-add').hidden = true;
+    toast(existing ? `Đã chọn ${name}` : `Đã thêm ${name}`);
+  },
   setMe: async (d) => {
     S.saveDevice({ me: Number(d.i) });
     render();
@@ -846,6 +1045,15 @@ document.addEventListener('click', (e) => {
 
 document.addEventListener('input', (e) => {
   if (e.target.matches('[name=lunarDays], [name=lunarDay], [name=lunarMonth]')) updateLunarPreview(e.target.form);
+  if (e.target.matches('form[data-form=task] [name=title]')) autoPickSubj(e.target.form);
+});
+
+// Enter trong ô thêm nhanh tên → thêm tên, không gửi cả form việc
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.matches('[name=newSubjName], [name=newSubjIcon]')) {
+    e.preventDefault();
+    actions.saveSubjInline({}, e.target);
+  }
 });
 
 document.addEventListener('change', async (e) => {
@@ -868,6 +1076,7 @@ document.addEventListener('submit', async (e) => {
   const kind = form.dataset.form;
   if (kind === 'task') saveTask(form);
   else if (kind === 'expense') saveExpense(form);
+  else if (kind === 'subject') saveSubject(form);
   else if (kind === 'done') {
     const t = S.get('task', form.dataset.id);
     const f = Object.fromEntries(new FormData(form));
