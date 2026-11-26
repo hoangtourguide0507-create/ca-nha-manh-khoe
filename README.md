@@ -8,7 +8,7 @@ Web app nhắc việc nhà cho hai vợ chồng. Dữ liệu đồng bộ giữa
   - *Âm lịch*: hằng tháng (mùng 1, rằm, hay bất kỳ ngày âm nào) hoặc hằng năm (ngày giỗ, ông Công ông Táo, Vu Lan…). Tháng thiếu thì ngày 30 tính là ngày 29; giỗ không tính tháng nhuận.
   - *Một lần*: ví dụ hết bảo hành, lịch hẹn.
 - **Hôm nay**: hiện việc quá hạn, việc đến hạn hôm nay và việc trong 7 ngày tới. Bấm ✓ là xong, có nút hoàn tác.
-- **Hóa đơn**: ghi số tiền mỗi lần trả, gõ tắt được như `850k` hay `1tr2`. Xem được biểu đồ các kỳ gần đây.
+- **Chi phí & nơi mua**: việc bật *Ghi chi phí* sẽ hỏi giá và nơi mua mỗi lần xong (Shopee, Lazada, TikTok Shop, cửa hàng, Zalo người bán), gõ tắt được như `850k` hay `1tr2`. Trang chi tiết hiện giá lần trước, giá rẻ nhất, tổng năm, biểu đồ các kỳ và nút **Mua lại** (mở link Shopee, nhắn Zalo người bán, gọi hoặc chỉ đường tới cửa hàng).
 - **Chi lớn**: ghi số tiền, ngày giờ, nhóm, cách thanh toán, người chi. Có tổng theo năm và theo nhóm. Từ một khoản chi có thể *tạo nhắc kèm* như bảo hiểm hay hết bảo hành.
 - **Người & thú cưng**: thêm Thúi, Má, Bé Na… rồi gắn vào việc (một việc gắn được nhiều người). Bấm vào avatar ở tab *Việc* để xem riêng việc của người đó. Gõ tên việc có chứa tên (VD “Thay cát cho Thúi”) thì tự chọn; thêm tên mới thì các việc cũ có tên đó cũng tự được gắn.
 - **Hai người dùng chung**: mỗi việc giao cho một người hoặc cả hai, thông báo gửi đúng máy của người được giao.
@@ -81,7 +81,7 @@ Thông báo trên iPhone cần iOS 16.4 trở lên, và app phải được mở
 
 ## Cập nhật app sau này
 
-- **Sửa giao diện**: sửa file trên GitHub (bút chì ✏️ → Commit). Mở `sw.js`, tăng số phiên bản trong `CACHE` (hiện là `'sonha-v6'`) lên `v7`, `v8`… để điện thoại tải bản mới. Đóng hẳn app rồi mở lại.
+- **Sửa giao diện**: sửa file trên GitHub (bút chì ✏️ → Commit). Mở `sw.js`, tăng số phiên bản trong `CACHE` (hiện là `'sonha-v7'`) lên `v8`, `v9`… để điện thoại tải bản mới. Đóng hẳn app rồi mở lại.
 - **Sửa máy chủ**: dán lại `worker/worker.js` vào Cloudflare → Deploy. Dữ liệu trong D1 vẫn giữ nguyên.
 
 ## Gặp lỗi

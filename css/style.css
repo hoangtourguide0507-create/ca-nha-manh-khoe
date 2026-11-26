@@ -289,3 +289,21 @@ label.check input { width: 22px; height: 22px; min-height: 0; accent-color: var(
 .prow .av { width: 40px; height: 40px; border-radius: 50%; background: var(--accent-soft); display: grid; place-items: center; font-size: 21px; flex: none; }
 .prow b { flex: 1; font-weight: 800; }
 .prow .chev { color: var(--muted); font-size: 20px; }
+
+/* ---------- Chi phí & nơi mua ---------- */
+.form:not([data-cost="1"]) .only-cost { display: none; }
+.cost-box { display: grid; gap: 10px; background: #fff8f2; border-radius: 18px; padding: 12px; }
+.shop-pick { margin-bottom: 0; gap: 6px; }
+.shop-pick .chip { padding: 5px 11px; font-size: 13px; }
+
+.buy-card { display: grid; gap: 10px; background: linear-gradient(135deg, #fff7ef, #fff0f4); border-radius: 20px; padding: 14px; }
+.buy-item { font-weight: 800; }
+.buy-shop { display: flex; align-items: center; gap: 6px; font-weight: 700; flex-wrap: wrap; }
+.buy-shop span { color: var(--muted); font-size: 13px; background: #fff; border-radius: 99px; padding: 1px 8px; }
+.buy-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; }
+.buy-stats > div { background: #fff; border-radius: 14px; padding: 8px 10px; display: grid; }
+.buy-stats small { color: var(--muted); font-size: 11.5px; font-weight: 800; }
+.buy-stats b { color: var(--accent); font-size: 15px; font-weight: 900; font-variant-numeric: tabular-nums; }
+.buy-stats span { color: var(--muted); font-size: 11.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.buy-go { display: block; text-decoration: none; }
+.hrow small { display: block; color: var(--muted); font-size: 12px; font-weight: 700; }
