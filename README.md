@@ -2,9 +2,10 @@
 
 Web app nhắc việc nhà cho hai vợ chồng. Dữ liệu đồng bộ giữa hai máy, có thông báo đẩy trên màn hình khóa iPhone, và có sổ ghi các khoản chi lớn.
 
-- **Nhắc việc theo 3 kiểu**
+- **Nhắc việc theo 4 kiểu**
   - *Sau N ngày*: lặp lại kể từ lần làm gần nhất. Ví dụ thay cát mèo 3 ngày một lần, làm trễ thì lịch tự lùi theo.
   - *Theo tháng*: ngày cố định mỗi M tháng. Ví dụ tiền điện ngày 5 hằng tháng, bảo hiểm xe hằng năm. Trả trễ vẫn nhắc đúng ngày ở kỳ sau.
+  - *Âm lịch*: hằng tháng (mùng 1, rằm, hay bất kỳ ngày âm nào) hoặc hằng năm (ngày giỗ, ông Công ông Táo, Vu Lan…). Tháng thiếu thì ngày 30 tính là ngày 29; giỗ không tính tháng nhuận.
   - *Một lần*: ví dụ hết bảo hành, lịch hẹn.
 - **Hôm nay**: hiện việc quá hạn, việc đến hạn hôm nay và việc trong 7 ngày tới. Bấm ✓ là xong, có nút hoàn tác.
 - **Hóa đơn**: ghi số tiền mỗi lần trả, gõ tắt được như `850k` hay `1tr2`. Xem được biểu đồ các kỳ gần đây.
@@ -27,6 +28,7 @@ worker/worker.js                                              ← máy chủ (Cl
 |---|---|
 | `js/app.js` | Giao diện, các màn hình, form |
 | `js/schedule.js` | Tính ngày đến hạn |
+| `js/lunar.js` | Đổi ngày dương sang âm lịch Việt Nam (UTC+7), tìm ngày âm kế tiếp |
 | `js/store.js` | Lưu trên máy và đồng bộ. Địa chỉ Worker mặc định nằm ở `DEFAULT_API` |
 | `js/push.js` | Bật hoặc tắt thông báo |
 | `sw.js` | Chạy offline, nhận thông báo |
@@ -78,7 +80,7 @@ Thông báo trên iPhone cần iOS 16.4 trở lên, và app phải được mở
 
 ## Cập nhật app sau này
 
-- **Sửa giao diện**: sửa file trên GitHub (bút chì ✏️ → Commit). Mở `sw.js`, tăng số phiên bản trong `CACHE` (hiện là `'sonha-v3'`) lên `v4`, `v5`… để điện thoại tải bản mới. Đóng hẳn app rồi mở lại.
+- **Sửa giao diện**: sửa file trên GitHub (bút chì ✏️ → Commit). Mở `sw.js`, tăng số phiên bản trong `CACHE` (hiện là `'sonha-v4'`) lên `v5`, `v6`… để điện thoại tải bản mới. Đóng hẳn app rồi mở lại.
 - **Sửa máy chủ**: dán lại `worker/worker.js` vào Cloudflare → Deploy. Dữ liệu trong D1 vẫn giữ nguyên.
 
 ## Gặp lỗi
@@ -95,7 +97,6 @@ Nên **Xuất sao lưu** (Cài đặt → Dữ liệu) định kỳ để giữ 
 
 ## Hướng phát triển tiếp
 
-- Nhắc theo lịch âm (mùng 1, rằm, giỗ)
 - Chụp ảnh hóa đơn đính kèm khoản chi
 - Nhắc lặp trong ngày (ví dụ cho mèo uống thuốc 2 lần mỗi ngày)
 - Báo cáo hóa đơn điện nước theo năm

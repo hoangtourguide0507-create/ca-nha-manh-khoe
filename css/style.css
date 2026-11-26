@@ -135,7 +135,11 @@ label.check input { width: 22px; height: 22px; min-height: 0; accent-color: var(
 
 .form:not([data-type="interval"]) .only-interval,
 .form:not([data-type="monthly"]) .only-monthly,
-.form:not([data-type="once"]) .only-once { display: none; }
+.form:not([data-type="once"]) .only-once,
+.form:not([data-type="lunar"]) .only-lunar,
+.form:not([data-lunar="monthly"]) .only-lunar-monthly,
+.form:not([data-lunar="yearly"]) .only-lunar-yearly { display: none; }
+.seg.tight button { font-size: 13px; padding: 9px 2px; white-space: nowrap; }
 
 .hint { color: var(--muted); font-size: 13px; line-height: 1.4; }
 .hint.warn { color: var(--warn); }

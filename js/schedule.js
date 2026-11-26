@@ -1,10 +1,13 @@
 // Tính ngày đến hạn. Mọi ngày lưu dạng chuỗi 'YYYY-MM-DD' theo giờ địa phương.
 //
-// 3 kiểu lặp:
+// 4 kiểu lặp:
 //   interval : lặp sau N ngày kể từ lần làm gần nhất (thay cát mèo, tưới cây…)
 //   monthly  : lặp theo lịch cố định, mỗi M tháng vào ngày D (tiền điện ngày 5,
 //              bảo hiểm xe mỗi 12 tháng…). Trả trễ không làm lệch lịch tháng sau.
+//   lunar    : theo âm lịch — hằng tháng (mùng 1, rằm…) hoặc hằng năm (ngày giỗ…)
 //   once     : một lần duy nhất (hết bảo hành, hẹn lịch…)
+
+import { nextLunar, dayName } from './lunar.js';
 
 const pad = (n) => String(n).padStart(2, '0');
 export const fmt = (y, m, d) => `${y}-${pad(m)}-${pad(d)}`;
@@ -54,7 +57,19 @@ export function afterDone(task, doneDay) {
     const base = task.nextDue || doneDay;
     return { lastDone: doneDay, nextDue: addMonths(base, Math.max(1, task.everyMonths || 1), task.anchorDay) };
   }
+  if (task.type === 'lunar') {
+    // lần kế tiếp sau hạn hiện tại (làm sớm) hoặc sau ngày làm (làm trễ)
+    const base = task.nextDue && task.nextDue > doneDay ? task.nextDue : doneDay;
+    return { lastDone: doneDay, nextDue: lunarNext(task, addDays(base, 1)) };
+  }
   return { lastDone: doneDay, nextDue: null, finished: true };
+}
+
+/** Lần gần nhất (>= from) theo cấu hình âm lịch của việc. */
+export function lunarNext(task, from = today()) {
+  return task.lunarMode === 'yearly'
+    ? nextLunar({ mode: 'yearly', day: Number(task.lunarDay) || 1, month: Number(task.lunarMonth) || 1 }, from)
+    : nextLunar({ mode: 'monthly', days: (task.lunarDays || [1]).map(Number) }, from);
 }
 
 const WD = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
@@ -98,6 +113,11 @@ export function recurLabel(task) {
     if (m === 1) return `Ngày ${task.anchorDay} hằng tháng`;
     if (m === 12) return `Hằng năm · ${short(task.nextDue)}`;
     return `Ngày ${task.anchorDay} · mỗi ${m} tháng`;
+  }
+  if (task.type === 'lunar') {
+    if (task.lunarMode === 'yearly') return `${task.lunarDay}/${task.lunarMonth} âm hằng năm`;
+    const names = (task.lunarDays || [1]).map(Number).map(dayName).map((n, i) => (i ? n[0].toLowerCase() + n.slice(1) : n));
+    return `${names.join(' & ')} hằng tháng (âm)`;
   }
   return 'Một lần';
 }

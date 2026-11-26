@@ -1,6 +1,6 @@
 // Service worker: chạy offline + nhận thông báo đẩy.
 // Khi sửa file giao diện, tăng số phiên bản để máy tải bản mới.
-const CACHE = 'sonha-v3';
+const CACHE = 'sonha-v4';
 const ASSETS = [
   './',
   'index.html',
@@ -9,6 +9,7 @@ const ASSETS = [
   'js/store.js',
   'js/schedule.js',
   'js/push.js',
+  'js/lunar.js',
   'manifest.webmanifest',
   'icons/icon-180.png',
   'icons/icon-192.png',

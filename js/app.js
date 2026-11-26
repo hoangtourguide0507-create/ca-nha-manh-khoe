@@ -1,5 +1,6 @@
 import * as S from './store.js';
 import * as D from './schedule.js';
+import { lunarShort } from './lunar.js';
 import { enablePush, disablePush, pushState, refreshPushOwner, isStandalone } from './push.js';
 
 // ---------- Danh mục & mẫu ----------
@@ -9,6 +10,7 @@ const CATS = [
   { id: 'home', name: 'Nhà cửa', icon: '🏠' },
   { id: 'car', name: 'Xe cộ', icon: '🚗' },
   { id: 'health', name: 'Sức khỏe', icon: '💊' },
+  { id: 'spirit', name: 'Cúng giỗ', icon: '🪔' },
   { id: 'other', name: 'Khác', icon: '📌' },
 ];
 const EXP_CATS = [
@@ -27,6 +29,11 @@ const TEMPLATES = [
   { title: 'Tiền điện', icon: '⚡', category: 'bill', type: 'monthly', day: 5, trackAmount: true, remindBefore: 1 },
   { title: 'Tiền nước', icon: '💧', category: 'bill', type: 'monthly', day: 10, trackAmount: true, remindBefore: 1 },
   { title: 'Internet', icon: '🌐', category: 'bill', type: 'monthly', day: 15, trackAmount: true },
+  { title: 'Thắp hương mùng 1 & rằm', icon: '🪔', category: 'spirit', type: 'lunar', lunarMode: 'monthly', lunarDays: [1, 15], remindBefore: 1, remindHour: 7 },
+  { title: 'Giỗ ', icon: '🕯️', category: 'spirit', type: 'lunar', lunarMode: 'yearly', lunarDay: '', lunarMonth: '', remindBefore: 7, remindHour: 8 },
+  { title: 'Cúng ông Công ông Táo', icon: '🎏', category: 'spirit', type: 'lunar', lunarMode: 'yearly', lunarDay: 23, lunarMonth: 12, remindBefore: 3, remindHour: 8 },
+  { title: 'Rằm tháng Giêng', icon: '🏮', category: 'spirit', type: 'lunar', lunarMode: 'yearly', lunarDay: 15, lunarMonth: 1, remindBefore: 2, remindHour: 8 },
+  { title: 'Rằm tháng 7 (Vu Lan)', icon: '🪷', category: 'spirit', type: 'lunar', lunarMode: 'yearly', lunarDay: 15, lunarMonth: 7, remindBefore: 3, remindHour: 8 },
   { title: 'Tẩy giun cho mèo', icon: '🪱', category: 'pet', type: 'interval', everyDays: 90 },
   { title: 'Tiêm phòng cho mèo', icon: '💉', category: 'pet', type: 'interval', everyDays: 365 },
   { title: 'Thay lõi lọc nước', icon: '🚰', category: 'home', type: 'interval', everyDays: 180 },
@@ -129,7 +136,7 @@ function viewToday() {
       : '';
   return `
   <header class="top">
-    <div><div class="eyebrow">${D.long(t)}</div><h1>${name ? `Chào ${esc(name)}` : 'Sổ Nhà'}</h1></div>
+    <div><div class="eyebrow">${D.long(t)} · ${lunarShort(t)}</div><h1>${name ? `Chào ${esc(name)}` : 'Sổ Nhà'}</h1></div>
     ${syncBadge()}
   </header>
   ${banner}
@@ -257,7 +264,7 @@ function viewSettings() {
     <label class="btn file">Nhập từ file sao lưu<input type="file" accept="application/json,.json" data-act-change="import" hidden></label>
     <button class="btn ghost" data-act="resync">Tải lại toàn bộ từ máy chủ</button>
   </div></section>
-  <p class="foot">Sổ Nhà · v1.1</p>`;
+  <p class="foot">Sổ Nhà · v1.2</p>`;
 }
 
 const views = { today: viewToday, tasks: viewTasks, expenses: viewExpenses, settings: viewSettings };
@@ -381,12 +388,12 @@ function hourOptions(sel) {
 
 function taskForm(task = {}, prefill = null) {
   const isNew = !task.id;
-  const t = { type: 'interval', everyDays: 3, everyMonths: 1, remindHour: 8, remindBefore: 0, assignee: 'all', category: 'other', ...task, ...(prefill || {}) };
+  const t = { type: 'interval', everyDays: 3, everyMonths: 1, remindHour: 8, remindBefore: 0, assignee: 'all', category: 'other', lunarMode: 'monthly', lunarDays: [1, 15], ...task, ...(prefill || {}) };
   const today = D.today();
   const m = members();
   const monthlyDate = t.type === 'monthly' && t.nextDue ? t.nextDue : D.nextDayOfMonth(t.day || Number(today.slice(8)));
   openSheet(`
-  <form class="form" data-form="task" data-type="${t.type}" data-id="${t.id || ''}">
+  <form class="form" data-form="task" data-type="${t.type}" data-lunar="${t.lunarMode}" data-id="${t.id || ''}">
     <h3>${isNew ? 'Thêm việc' : 'Sửa việc'}</h3>
     ${
       isNew
@@ -402,9 +409,10 @@ function taskForm(task = {}, prefill = null) {
     <label>Nhóm<select name="category">${CATS.map((c) => `<option value="${c.id}" ${c.id === t.category ? 'selected' : ''}>${c.icon} ${c.name}</option>`).join('')}</select></label>
 
     <div class="label">Kiểu lặp</div>
-    <div class="seg" data-seg="type">
+    <div class="seg tight" data-seg="type">
       <button type="button" data-v="interval" class="${t.type === 'interval' ? 'on' : ''}">Sau N ngày</button>
       <button type="button" data-v="monthly" class="${t.type === 'monthly' ? 'on' : ''}">Theo tháng</button>
+      <button type="button" data-v="lunar" class="${t.type === 'lunar' ? 'on' : ''}">Âm lịch</button>
       <button type="button" data-v="once" class="${t.type === 'once' ? 'on' : ''}">Một lần</button>
     </div>
     <input type="hidden" name="type" value="${t.type}">
@@ -420,6 +428,20 @@ function taskForm(task = {}, prefill = null) {
       <label>Lặp mỗi (tháng)<input name="everyMonths" type="number" min="1" max="120" inputmode="numeric" value="${t.everyMonths || 1}"></label>
     </div>
     <div class="only-monthly hint">Giữ đúng ngày trong tháng dù trả sớm hay trễ. 12 tháng = hằng năm.</div>
+
+    <div class="only-lunar">
+      <div class="seg" data-seg="lunarMode">
+        <button type="button" data-v="monthly" class="${t.lunarMode !== 'yearly' ? 'on' : ''}">Hằng tháng</button>
+        <button type="button" data-v="yearly" class="${t.lunarMode === 'yearly' ? 'on' : ''}">Hằng năm (giỗ)</button>
+      </div>
+      <input type="hidden" name="lunarMode" value="${t.lunarMode === 'yearly' ? 'yearly' : 'monthly'}">
+    </div>
+    <label class="only-lunar only-lunar-monthly">Các ngày âm<input name="lunarDays" value="${esc((t.lunarDays || [1, 15]).join(', '))}" inputmode="numeric" placeholder="VD: 1, 15" autocomplete="off"></label>
+    <div class="only-lunar only-lunar-yearly row2">
+      <label>Ngày âm<input name="lunarDay" type="number" min="1" max="30" inputmode="numeric" value="${t.lunarDay || ''}" placeholder="VD: 10"></label>
+      <label>Tháng âm<input name="lunarMonth" type="number" min="1" max="12" inputmode="numeric" value="${t.lunarMonth || ''}" placeholder="VD: 3"></label>
+    </div>
+    <div class="only-lunar hint" data-lunar-preview></div>
 
     <label class="only-once">Ngày<input name="onceDue" type="date" value="${t.type === 'once' && t.nextDue ? t.nextDue : today}"></label>
 
@@ -461,14 +483,54 @@ function applyTemplate(form, x) {
     set('everyMonths', x.everyMonths || 1);
     set('monthlyDue', x.day ? D.nextDayOfMonth(x.day) : x.everyMonths === 12 ? D.addMonths(D.today(), 12) : D.today());
   }
+  if (x.type === 'lunar') {
+    setSeg(form, 'lunarMode', x.lunarMode || 'monthly');
+    if (x.lunarDays) set('lunarDays', x.lunarDays.join(', '));
+    set('lunarDay', x.lunarDay ?? '');
+    set('lunarMonth', x.lunarMonth ?? '');
+  }
   set('remindBefore', x.remindBefore || 0);
+  if (x.remindHour != null) set('remindHour', x.remindHour);
   form.elements.trackAmount.checked = !!x.trackAmount;
+  updateLunarPreview(form);
+  if (x.type === 'lunar' && x.lunarMode === 'yearly' && !x.lunarDay) {
+    const el = form.elements.title;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }
+}
+
+/** Đọc cấu hình âm lịch từ form. Trả về null nếu chưa hợp lệ. */
+function lunarFromForm(form) {
+  const f = form.elements;
+  if (f.lunarMode.value === 'yearly') {
+    const day = parseInt(f.lunarDay.value, 10);
+    const month = parseInt(f.lunarMonth.value, 10);
+    if (!(day >= 1 && day <= 30 && month >= 1 && month <= 12)) return null;
+    return { lunarMode: 'yearly', lunarDay: day, lunarMonth: month };
+  }
+  const days = [...new Set(String(f.lunarDays.value).split(/[^\d]+/).map(Number).filter((d) => d >= 1 && d <= 30))].sort((a, b) => a - b);
+  return days.length ? { lunarMode: 'monthly', lunarDays: days } : null;
+}
+
+function updateLunarPreview(form) {
+  const el = form.querySelector('[data-lunar-preview]');
+  if (!el) return;
+  const cfg = form.elements.type.value === 'lunar' ? lunarFromForm(form) : null;
+  if (!cfg) {
+    el.textContent = form.elements.lunarMode.value === 'yearly' ? 'Nhập ngày và tháng âm, VD: giỗ ngày 10 tháng 3.' : 'Nhập ngày âm, cách nhau bằng dấu phẩy. VD: 1, 15.';
+    return;
+  }
+  const next = D.lunarNext(cfg);
+  el.textContent = next ? `Lần tới: ${D.long(next)} (${lunarShort(next)}). Tháng thiếu thì ngày 30 tính là ngày 29.` : 'Không tìm thấy ngày phù hợp.';
 }
 
 function setSeg(form, name, v) {
   form.elements[name].value = v;
   form.querySelectorAll(`[data-seg="${name}"] button`).forEach((b) => b.classList.toggle('on', b.dataset.v === String(v)));
   if (name === 'type') form.dataset.type = v;
+  if (name === 'lunarMode') form.dataset.lunar = v;
+  if (name === 'type' || name === 'lunarMode') updateLunarPreview(form);
 }
 
 function saveTask(form) {
@@ -497,6 +559,17 @@ function saveTask(form) {
     task.everyMonths = Math.max(1, parseInt(f.everyMonths, 10) || 1);
     task.nextDue = f.monthlyDue || D.today();
     task.anchorDay = Number(task.nextDue.slice(8));
+  } else if (f.type === 'lunar') {
+    const cfg = lunarFromForm(form);
+    if (!cfg) return toast(f.lunarMode === 'yearly' ? 'Nhập ngày (1–30) và tháng âm (1–12)' : 'Nhập ngày âm, VD: 1, 15');
+    delete task.lunarDays;
+    delete task.lunarDay;
+    delete task.lunarMonth;
+    Object.assign(task, cfg);
+    const key = (x) => JSON.stringify([x.lunarMode, x.lunarDays, x.lunarDay, x.lunarMonth]);
+    const sameCfg = old && old.type === 'lunar' && key(old) === key(task);
+    // sửa tên/giờ nhắc thì giữ hạn cũ (kể cả đang quá hạn); đổi ngày âm thì tính lại
+    task.nextDue = sameCfg && old.nextDue ? old.nextDue : D.lunarNext(task, D.today());
   } else {
     task.nextDue = f.onceDue || D.today();
   }
@@ -555,7 +628,7 @@ function taskDetail(id) {
         <div class="ico big">${esc(t.icon || catOf(t.category).icon)}</div>
         <div><h3>${esc(t.title)}</h3><div class="meta"><span>${D.recurLabel(t)}</span><span>${esc(who(t.assignee))}</span><span>${String(t.remindHour ?? 8).padStart(2, '0')}:00</span></div></div>
       </div>
-      <div class="due-big ${st}">${t.finished ? 'Đã hoàn thành' : `${D.dueLabel(t.nextDue)}<small>${D.long(t.nextDue)}</small>`}</div>
+      <div class="due-big ${st}">${t.finished ? 'Đã hoàn thành' : `${D.dueLabel(t.nextDue)}<small>${D.long(t.nextDue)}${t.type === 'lunar' ? ` · ${lunarShort(t.nextDue)}` : ''}</small>`}</div>
       ${t.note ? `<p class="note">${esc(t.note)}</p>` : ''}
       <div class="actions">
         <button class="btn" data-act="editTask" data-id="${id}">Sửa</button>
@@ -769,6 +842,10 @@ document.addEventListener('click', (e) => {
     e.preventDefault();
     setSeg(seg.closest('form'), seg.parentElement.dataset.seg, seg.dataset.v);
   }
+});
+
+document.addEventListener('input', (e) => {
+  if (e.target.matches('[name=lunarDays], [name=lunarDay], [name=lunarMonth]')) updateLunarPreview(e.target.form);
 });
 
 document.addEventListener('change', async (e) => {
