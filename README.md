@@ -80,7 +80,7 @@ Thông báo trên iPhone cần iOS 16.4 trở lên, và app phải được mở
 
 ## Cập nhật app sau này
 
-- **Sửa giao diện**: sửa file trên GitHub (bút chì ✏️ → Commit). Mở `sw.js`, tăng số phiên bản trong `CACHE` (hiện là `'sonha-v4'`) lên `v5`, `v6`… để điện thoại tải bản mới. Đóng hẳn app rồi mở lại.
+- **Sửa giao diện**: sửa file trên GitHub (bút chì ✏️ → Commit). Mở `sw.js`, tăng số phiên bản trong `CACHE` (hiện là `'sonha-v5'`) lên `v6`, `v7`… để điện thoại tải bản mới. Đóng hẳn app rồi mở lại.
 - **Sửa máy chủ**: dán lại `worker/worker.js` vào Cloudflare → Deploy. Dữ liệu trong D1 vẫn giữ nguyên.
 
 ## Gặp lỗi

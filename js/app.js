@@ -98,7 +98,7 @@ function taskCard(t, today = D.today()) {
   const st = D.dueState(t, today);
   return `
   <div class="card task ${st}" data-act="openTask" data-id="${t.id}">
-    <div class="ico">${esc(t.icon || catOf(t.category).icon)}</div>
+    <div class="ico" data-cat="${esc(t.category || 'other')}">${esc(t.icon || catOf(t.category).icon)}</div>
     <div class="body">
       <div class="title">${esc(t.title)}</div>
       <div class="meta"><span class="due">${D.dueLabel(t.nextDue, today)}</span><span>${D.recurLabel(t)}</span><span>${esc(who(t.assignee))}</span></div>
@@ -130,20 +130,20 @@ function viewToday() {
       : '';
   const empty =
     !overdue.length && !todays.length
-      ? `<div class="empty"><div class="big">🌿</div><div>Hôm nay không có việc gì đến hạn.</div>${
+      ? `<div class="empty"><div class="big">🐱</div><div>Hôm nay rảnh rang, không có việc gì đến hạn.</div>${
           tasks.length ? '' : `<button class="btn primary" data-act="newTask">Thêm việc đầu tiên</button>`
         }</div>`
       : '';
   return `
   <header class="top">
-    <div><div class="eyebrow">${D.long(t)} · ${lunarShort(t)}</div><h1>${name ? `Chào ${esc(name)}` : 'Sổ Nhà'}</h1></div>
+    <div><div class="eyebrow">${D.long(t)} · ${lunarShort(t)}</div><h1>${name ? `Chào ${esc(name)} 👋` : 'Sổ Nhà 🏡'}</h1></div>
     ${syncBadge()}
   </header>
   ${banner}
   <div class="stats">
-    <div class="stat ${overdue.length ? 'bad' : ''}"><b>${overdue.length}</b><span>Quá hạn</span></div>
-    <div class="stat ${todays.length ? 'warn' : ''}"><b>${todays.length}</b><span>Hôm nay</span></div>
-    <div class="stat"><b>${soon.length}</b><span>7 ngày tới</span></div>
+    <div class="stat ${overdue.length ? 'bad' : ''}"><b>${overdue.length}</b><span>⏰ Quá hạn</span></div>
+    <div class="stat ${todays.length ? 'warn' : ''}"><b>${todays.length}</b><span>☀️ Hôm nay</span></div>
+    <div class="stat ${soon.length ? 'soon' : ''}"><b>${soon.length}</b><span>🌱 7 ngày tới</span></div>
   </div>
   ${section('Quá hạn', overdue, t)}
   ${section('Hôm nay', todays, t)}
@@ -206,7 +206,7 @@ function viewExpenses() {
       ${es
         .map(
           (e) => `<div class="card task" data-act="editExpense" data-id="${e.id}">
-          <div class="ico">${catOf(e.category, EXP_CATS).icon}</div>
+          <div class="ico" data-cat="${esc(e.category || 'other')}">${catOf(e.category, EXP_CATS).icon}</div>
           <div class="body"><div class="title">${esc(e.title)}</div><div class="meta"><span>${fmtDateTime(e.at)}</span>${e.method ? `<span>${esc(e.method)}</span>` : ''}<span>${esc(who(e.by))}</span></div></div>
           <div class="amount">${money(e.amount)}</div></div>`
         )
@@ -264,7 +264,7 @@ function viewSettings() {
     <label class="btn file">Nhập từ file sao lưu<input type="file" accept="application/json,.json" data-act-change="import" hidden></label>
     <button class="btn ghost" data-act="resync">Tải lại toàn bộ từ máy chủ</button>
   </div></section>
-  <p class="foot">Sổ Nhà · v1.2</p>`;
+  <p class="foot">Sổ Nhà · v1.3 · 🧡</p>`;
 }
 
 const views = { today: viewToday, tasks: viewTasks, expenses: viewExpenses, settings: viewSettings };
@@ -625,7 +625,7 @@ function taskDetail(id) {
     return `
     <div class="detail">
       <div class="detail-head">
-        <div class="ico big">${esc(t.icon || catOf(t.category).icon)}</div>
+        <div class="ico big" data-cat="${esc(t.category || 'other')}">${esc(t.icon || catOf(t.category).icon)}</div>
         <div><h3>${esc(t.title)}</h3><div class="meta"><span>${D.recurLabel(t)}</span><span>${esc(who(t.assignee))}</span><span>${String(t.remindHour ?? 8).padStart(2, '0')}:00</span></div></div>
       </div>
       <div class="due-big ${st}">${t.finished ? 'Đã hoàn thành' : `${D.dueLabel(t.nextDue)}<small>${D.long(t.nextDue)}${t.type === 'lunar' ? ` · ${lunarShort(t.nextDue)}` : ''}</small>`}</div>
