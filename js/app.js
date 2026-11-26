@@ -245,7 +245,7 @@ function viewSettings() {
     </div>
     <button class="btn" data-act="remindNow">Nhắc ngay các việc đến hạn</button>
     <button class="btn ghost" data-act="disablePush">Tắt thông báo trên máy này</button>
-    <div class="hint">Máy chủ kiểm tra mỗi giờ và nhắc mỗi việc đúng giờ bạn chọn (mặc định 8:00). Việc quá hạn sẽ được nhắc lại mỗi ngày cho đến khi xong.</div>
+    <div class="hint">Máy chủ kiểm tra mỗi giờ và nhắc mỗi việc từ giờ bạn chọn (mặc định 8:00). Nếu lỡ một lượt thì lượt sau vẫn nhắc, mỗi việc chỉ nhắc một lần mỗi ngày. Việc quá hạn sẽ được nhắc lại mỗi ngày cho đến khi xong.</div>
   </div></section>
 
   <section><h2>Dữ liệu</h2>
@@ -257,7 +257,7 @@ function viewSettings() {
     <label class="btn file">Nhập từ file sao lưu<input type="file" accept="application/json,.json" data-act-change="import" hidden></label>
     <button class="btn ghost" data-act="resync">Tải lại toàn bộ từ máy chủ</button>
   </div></section>
-  <p class="foot">Sổ Nhà · v1.0</p>`;
+  <p class="foot">Sổ Nhà · v1.1</p>`;
 }
 
 const views = { today: viewToday, tasks: viewTasks, expenses: viewExpenses, settings: viewSettings };
@@ -375,7 +375,7 @@ function toast(msg, actionLabel, action) {
 // ---------- Form việc ----------
 function hourOptions(sel) {
   let s = '';
-  for (let h = 5; h <= 22; h++) s += `<option value="${h}" ${h === sel ? 'selected' : ''}>${String(h).padStart(2, '0')}:00</option>`;
+  for (let h = 0; h <= 23; h++) s += `<option value="${h}" ${h === sel ? 'selected' : ''}>${String(h).padStart(2, '0')}:00</option>`;
   return s;
 }
 
