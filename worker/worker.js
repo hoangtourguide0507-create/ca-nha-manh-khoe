@@ -178,6 +178,12 @@ async function loadSubs(env) {
 }
 
 const isDue = (t, today) => !t.finished && t.nextDue && addDays(t.nextDue, -(Number(t.remindBefore) || 0)) <= today;
+// Nhắc đặt hàng sớm: từ (hạn - orderBefore) tới trước hạn, cho tới khi bấm "Đã đặt"
+const needsOrder = (t, today) =>
+  !t.finished && t.nextDue && Number(t.orderBefore) > 0 && t.orderedFor !== t.nextDue &&
+  addDays(t.nextDue, -Number(t.orderBefore)) <= today && today < t.nextDue;
+const SHOP_NAMES = { shopee: 'Shopee', lazada: 'Lazada', tiktok: 'TikTok Shop', store: 'Cửa hàng', zalo: 'Zalo', other: '' };
+const shopText = (b) => (b ? b.name || SHOP_NAMES[b.kind] || '' : '');
 const forUser = (t, user) => t.assignee === 'all' || t.assignee === undefined || t.assignee === null || String(t.assignee) === String(user) || user === null;
 
 async function runReminders(env, { force = false } = {}) {
@@ -185,32 +191,45 @@ async function runReminders(env, { force = false } = {}) {
   const tasks = await loadTasks(env);
   // Nhắc từ giờ đã chọn trở đi: nếu Cron lỡ một lượt thì lượt sau vẫn nhắc.
   // Bảng `notified` đảm bảo mỗi việc chỉ nhắc một lần mỗi ngày.
-  let due = tasks.filter((t) => isDue(t, day) && (force || hour >= Number(t.remindHour ?? 8)));
+  const timeOk = (t) => force || hour >= Number(t.remindHour ?? 8);
+  // mỗi mục nhắc có key riêng: việc đến hạn = id, đặt hàng = id:order
+  let due = [
+    ...tasks.filter((t) => isDue(t, day) && timeOk(t)).map((t) => ({ t, key: t.id, order: false })),
+    ...tasks.filter((t) => needsOrder(t, day) && timeOk(t)).map((t) => ({ t, key: `${t.id}:order`, order: true })),
+  ];
 
   if (!force && due.length) {
     const { results } = await env.DB.prepare('SELECT task_id FROM notified WHERE day = ?').bind(day).all();
     const done = new Set(results.map((r) => r.task_id));
-    due = due.filter((t) => !done.has(t.id));
+    due = due.filter((x) => !done.has(x.key));
   }
   if (!due.length) return { tasks: 0, sent: 0 };
+
+  const line = ({ t, order }) =>
+    order
+      ? `🛒 Đặt ${t.buyItem || t.title} — cần ${dueText(t, day)}${shopText(t.buy) ? ' · ' + shopText(t.buy) : ''}`
+      : `${t.icon || '•'} ${t.title} — ${dueText(t, day)}`;
 
   const allDueToday = tasks.filter((t) => !t.finished && t.nextDue && t.nextDue <= day);
   const subs = await loadSubs(env);
   let sent = 0;
   for (const s of subs) {
-    const mine = due.filter((t) => forUser(t, s.user)).sort((a, b) => a.nextDue.localeCompare(b.nextDue));
+    const mine = due.filter((x) => forUser(x.t, s.user)).sort((a, b) => a.t.nextDue.localeCompare(b.t.nextDue));
     if (!mine.length) continue;
     const badge = allDueToday.filter((t) => forUser(t, s.user)).length;
+    const one = mine[0];
     const payload =
       mine.length === 1
-        ? { title: `${mine[0].icon || '🔔'} ${mine[0].title}`, body: `Đến hạn ${dueText(mine[0], day)}${mine[0].note ? ' · ' + mine[0].note : ''}` }
-        : { title: `Sổ Nhà · ${mine.length} việc cần làm`, body: mine.map((t) => `${t.icon || '•'} ${t.title} — ${dueText(t, day)}`).join('\n') };
+        ? one.order
+          ? { title: `🛒 Đặt hàng: ${one.t.buyItem || one.t.title}`, body: `Cần cho “${one.t.title}” ${dueText(one.t, day)}${shopText(one.t.buy) ? ' · ' + shopText(one.t.buy) : ''}. Mở app để mua lại.` }
+          : { title: `${one.t.icon || '🔔'} ${one.t.title}`, body: `Đến hạn ${dueText(one.t, day)}${one.t.note ? ' · ' + one.t.note : ''}` }
+        : { title: `Sổ Nhà · ${mine.length} việc cần làm`, body: mine.map(line).join('\n') };
     if (await deliver(env, s, { ...payload, tag: `sonha-${day}-${hour}`, url: './', badge })) sent++;
   }
 
   if (!force) {
     const stmt = env.DB.prepare('INSERT OR IGNORE INTO notified (task_id, day) VALUES (?, ?)');
-    await env.DB.batch([...due.map((t) => stmt.bind(t.id, day)), env.DB.prepare('DELETE FROM notified WHERE day < ?').bind(addDays(day, -30))]);
+    await env.DB.batch([...due.map((x) => stmt.bind(x.key, day)), env.DB.prepare('DELETE FROM notified WHERE day < ?').bind(addDays(day, -30))]);
   }
   return { tasks: due.length, sent };
 }

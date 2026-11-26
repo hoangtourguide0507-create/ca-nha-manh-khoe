@@ -307,3 +307,58 @@ label.check input { width: 22px; height: 22px; min-height: 0; accent-color: var(
 .buy-stats span { color: var(--muted); font-size: 11.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .buy-go { display: block; text-decoration: none; }
 .hrow small { display: block; color: var(--muted); font-size: 12px; font-weight: 700; }
+
+/* ---------- Thống kê chi phí ---------- */
+.card-head { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+.card-head b { font-weight: 900; }
+.card-head span { color: var(--muted); font-size: 13px; font-weight: 700; }
+.periodic { background: linear-gradient(140deg, #fff 40%, #effaf4); }
+.periodic .card-head { margin-top: 0; }
+.periodic .bar .track i { background: linear-gradient(90deg, #7fd9b4, var(--ok)); }
+.sum.small { font-size: 28px; color: var(--ok); }
+.label.sp { margin: 14px 0 4px; }
+.periodic .prow { padding: 8px 2px; }
+.periodic .prow .av { width: 34px; height: 34px; font-size: 18px; border-radius: 12px; }
+.prow .av[data-cat="pet"] { background: #ffe9d9; }
+.prow .av[data-cat="bill"] { background: #fff3c8; }
+.prow .av[data-cat="home"] { background: var(--sky-soft); }
+.prow .av[data-cat="car"] { background: var(--lilac-soft); }
+.prow .av[data-cat="health"] { background: var(--ok-soft); }
+.prow b.money { color: var(--ok); flex: none; }
+.subj-costs { display: flex; gap: 8px; flex-wrap: wrap; }
+.subj-cost { border: none; background: #fff; border-radius: 16px; padding: 8px 12px 8px 8px; display: flex; align-items: center; gap: 8px; font-weight: 800; box-shadow: var(--shadow); }
+.subj-cost .av { width: 30px; height: 30px; border-radius: 50%; background: var(--accent-soft); display: grid; place-items: center; font-size: 17px; }
+.subj-cost b { color: var(--ok); }
+.cost-line { margin-top: 4px; font-size: 13.5px; font-weight: 700; color: var(--muted); }
+.cost-line b { color: var(--ok); }
+.dir-btn { display: block; width: 100%; margin: -8px 0 22px; }
+
+/* ---------- Đặt hàng ---------- */
+.card.task.order { border-color: #cfe9ff; background: linear-gradient(90deg, #f1f8ff, #fff 65%); align-items: flex-start; }
+.card.task.order .ico { background: var(--sky-soft); }
+.card.task.order .title { white-space: normal; }
+.order-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.order-actions .btn { text-decoration: none; }
+.order-state { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: #fff; border-radius: 14px; padding: 8px 10px; font-size: 13.5px; font-weight: 800; color: var(--muted); }
+.order-state.warn { color: #2d7fd6; background: #eef6ff; }
+.order-state.ok { color: var(--ok); background: var(--ok-soft); }
+button.link { border: none; background: none; color: var(--muted); text-decoration: underline; font-weight: 700; padding: 0; }
+
+/* ---------- So giá ---------- */
+.chg { font-style: normal; font-size: 11px; font-weight: 900; margin-left: 4px; padding: 0 5px; border-radius: 99px; }
+.chg.up { color: var(--bad); background: var(--bad-soft); }
+.chg.down { color: var(--ok); background: var(--ok-soft); }
+.price-hint { border-radius: 12px; padding: 9px 12px; font-size: 13.5px; font-weight: 700; background: var(--surface-2); color: var(--muted); margin-top: -4px; }
+.price-hint[hidden] { display: none; }
+.price-hint.up { background: var(--bad-soft); color: #c23a52; }
+.price-hint.down { background: var(--ok-soft); color: #1f8a63; }
+.price-hint a { color: inherit; font-weight: 900; }
+
+/* ---------- Danh bạ nơi mua ---------- */
+.shop-card { display: grid; gap: 8px; background: #fffaf6; border: 2px solid var(--line); border-radius: 18px; padding: 12px; }
+.shop-top { display: flex; align-items: center; gap: 10px; }
+.shop-top .av { width: 42px; height: 42px; border-radius: 14px; background: #fff; display: grid; place-items: center; font-size: 22px; flex: none; }
+.shop-top .lnk { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shop-items { display: flex; gap: 6px; flex-wrap: wrap; }
+.shop-items span { background: #fff; border-radius: 99px; padding: 2px 10px; font-size: 12.5px; font-weight: 700; }
+.shop-card .btn.primary { text-decoration: none; }

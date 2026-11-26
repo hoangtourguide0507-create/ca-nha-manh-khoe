@@ -61,6 +61,7 @@ function knownShops() {
   const m = new Map();
   const items = [...S.all('log'), ...S.all('task')].sort((a, b) => (a.updatedAt || 0) - (b.updatedAt || 0));
   for (const x of items) if (x.buy?.name) m.set(x.buy.name.normalize('NFC').toLowerCase(), x.buy);
+  for (const r of shopRecords()) m.set(r.name.normalize('NFC').toLowerCase(), { kind: r.kind, name: r.name, link: r.link });
   return [...m.values()];
 }
 
@@ -81,6 +82,99 @@ function buyHref(b, item = '') {
   if (q && b.kind === 'shopee') return { url: `https://shopee.vn/search?keyword=${encodeURIComponent(q)}`, label: 'Tìm trên Shopee' };
   if (q && b.kind === 'lazada') return { url: `https://www.lazada.vn/catalog/?q=${encodeURIComponent(q)}`, label: 'Tìm trên Lazada' };
   return null;
+}
+
+// ---------- Thống kê chi phí từ các lần làm có ghi tiền ----------
+function pricedLogs(taskId) {
+  return S.all('log')
+    .filter((l) => l.taskId === taskId && l.amount)
+    .sort((a, b) => (b.doneAt || b.day || '').localeCompare(a.doneAt || a.day || ''));
+}
+/** Chênh lệch % so với lần trước, VD 21 nghĩa là đắt hơn 21%. */
+const pctChange = (now, before) => (before ? Math.round(((now - before) / before) * 100) : 0);
+function chgBadge(p) {
+  if (!p || Math.abs(p) < 1) return '';
+  return `<i class="chg ${p > 0 ? 'up' : 'down'}">${p > 0 ? '▲' : '▼'}${Math.abs(p)}%</i>`;
+}
+function periodicStats(year) {
+  const tasks = new Map(S.all('task').map((t) => [t.id, t]));
+  const logs = S.all('log').filter((l) => l.amount && (l.day || '').startsWith(String(year)));
+  const byTask = new Map();
+  for (const l of logs) {
+    const t = tasks.get(l.taskId);
+    if (!t) continue;
+    const x = byTask.get(t.id) || { t, sum: 0, n: 0 };
+    x.sum += l.amount;
+    x.n++;
+    byTask.set(t.id, x);
+  }
+  const rows = [...byTask.values()].sort((a, b) => b.sum - a.sum);
+  const total = rows.reduce((s, x) => s + x.sum, 0);
+  const byCat = CATS.map((c) => ({ c, sum: rows.filter((x) => (x.t.category || 'other') === c.id).reduce((s, x) => s + x.sum, 0) }))
+    .filter((x) => x.sum > 0)
+    .sort((a, b) => b.sum - a.sum);
+  const bySubj = subjects()
+    .map((p) => ({ p, sum: rows.filter((x) => (x.t.subjects || []).includes(p.id)).reduce((s, x) => s + x.sum, 0) }))
+    .filter((x) => x.sum > 0)
+    .sort((a, b) => b.sum - a.sum);
+  return { total, rows, byCat, bySubj, years: [...new Set(S.all('log').filter((l) => l.amount).map((l) => Number((l.day || '').slice(0, 4))))] };
+}
+/** Tổng chi phí trong năm của các việc gắn với một người/thú cưng. */
+function subjectYearCost(id, year = D.today().slice(0, 4)) {
+  const ids = new Set(S.all('task').filter((t) => (t.subjects || []).includes(id)).map((t) => t.id));
+  return S.all('log')
+    .filter((l) => l.amount && ids.has(l.taskId) && (l.day || '').startsWith(year))
+    .reduce((s, l) => s + l.amount, 0);
+}
+
+// ---------- Nhắc đặt hàng sớm ----------
+const ORDER_OPTS = [0, 1, 2, 3, 5, 7, 10, 14];
+function needsOrder(t, today = D.today()) {
+  const n = Number(t.orderBefore) || 0;
+  if (!n || t.finished || !t.nextDue || t.orderedFor === t.nextDue) return false;
+  return D.addDays(t.nextDue, -n) <= today && today < t.nextDue;
+}
+
+// ---------- Danh bạ nơi mua: gộp từ lịch sử + nơi mua tự thêm (config 'shop:<id>') ----------
+const shopRecords = () => S.all('config').filter((c) => String(c.id).startsWith('shop:') && c.name);
+const shopKey = (b) => (b.name || shopOf(b.kind)?.name || b.link || '').normalize('NFC').toLowerCase().trim();
+function shopDirectory() {
+  const map = new Map();
+  const entry = (b) => {
+    const k = shopKey(b);
+    if (!k) return null;
+    if (!map.has(k)) map.set(k, { key: k, name: b.name || '', kind: b.kind || '', link: b.link || '', note: '', items: new Set(), count: 0, sum: 0, last: null, rec: null });
+    return map.get(k);
+  };
+  for (const r of shopRecords()) Object.assign(entry(r), { name: r.name, kind: r.kind || '', link: r.link || '', note: r.note || '', rec: r });
+  const tasks = new Map(S.all('task').map((t) => [t.id, t]));
+  const logs = S.all('log').filter((l) => hasBuy(l.buy)).sort((a, b) => (a.day || '').localeCompare(b.day || ''));
+  for (const l of logs) {
+    const e = entry(l.buy);
+    if (!e) continue;
+    if (!e.rec) {
+      if (l.buy.kind) e.kind = l.buy.kind;
+      if (l.buy.link) e.link = l.buy.link;
+      if (l.buy.name) e.name = l.buy.name;
+    }
+    const t = tasks.get(l.taskId);
+    if (t) e.items.add(t.buyItem || t.title);
+    e.count++;
+    e.sum += l.amount || 0;
+    e.last = l;
+  }
+  for (const t of tasks.values()) {
+    if (!hasBuy(t.buy)) continue;
+    const e = entry(t.buy);
+    if (!e) continue;
+    e.items.add(t.buyItem || t.title);
+    if (!e.rec) {
+      e.kind ||= t.buy.kind || '';
+      e.link ||= t.buy.link || '';
+      e.name ||= t.buy.name || '';
+    }
+  }
+  return [...map.values()].sort((a, b) => (b.last?.day || '').localeCompare(a.last?.day || '') || a.name.localeCompare(b.name));
 }
 
 /** Ô nhập nơi mua (dùng trong form việc và form đánh dấu xong). */
@@ -203,6 +297,22 @@ function taskCard(t, today = D.today()) {
   </div>`;
 }
 
+function orderCard(t, today = D.today()) {
+  const go = buyHref(t.buy, t.buyItem);
+  return `
+  <div class="card task order" data-act="openTask" data-id="${t.id}">
+    <div class="ico" data-cat="${esc(t.category || 'other')}">🛒</div>
+    <div class="body">
+      <div class="title">Đặt ${esc(t.buyItem || t.title)}</div>
+      <div class="meta"><span>Cần cho “${esc(t.title)}” · ${D.dueLabel(t.nextDue, today).toLowerCase()}</span>${hasBuy(t.buy) ? `<span>${shopOf(t.buy.kind)?.icon || '🛍️'} ${esc(shopLabel(t.buy))}</span>` : ''}</div>
+      <div class="order-actions">
+        ${go ? `<a class="btn small primary" href="${esc(go.url)}" target="_blank" rel="noopener">${go.label} ↗</a>` : ''}
+        <button class="btn small" data-act="ordered" data-id="${t.id}">✓ Đã đặt</button>
+      </div>
+    </div>
+  </div>`;
+}
+
 function section(title, list, today, extra = '') {
   if (!list.length) return '';
   return `<section><h2>${title}<span class="count">${list.length}</span>${extra}</h2>${list.map((t) => taskCard(t, today)).join('')}</section>`;
@@ -242,6 +352,10 @@ function viewToday() {
     <div class="stat ${soon.length ? 'soon' : ''}"><b>${soon.length}</b><span>🌱 7 ngày tới</span></div>
   </div>
   ${section('Quá hạn', overdue, t)}
+  ${(() => {
+    const orders = activeTasks().filter((x) => needsOrder(x, t)).sort(byDue);
+    return orders.length ? `<section><h2>🛒 Cần đặt hàng<span class="count">${orders.length}</span></h2>${orders.map((x) => orderCard(x, t)).join('')}</section>` : '';
+  })()}
   ${section('Hôm nay', todays, t)}
   ${empty}
   ${section('Sắp tới', soon, t)}`;
@@ -274,7 +388,10 @@ function viewTasks() {
     subj
       ? `<div class="card person-head"><div class="av big">${esc(subj.icon)}</div><div class="body"><div class="title">${esc(subj.name)}</div><div class="meta"><span>${all.filter((x) => !x.finished).length} việc đang theo dõi</span>${
           all.some((x) => x.finished) ? `<span>${all.filter((x) => x.finished).length} đã xong</span>` : ''
-        }</div></div><button class="btn small" data-act="editSubject" data-id="${esc(subj.id)}">Sửa</button></div>`
+        }</div>${(() => {
+          const c = subjectYearCost(subj.id);
+          return c ? `<div class="cost-line">💸 Năm ${D.today().slice(0, 4)}: <b>${money(c)}</b></div>` : '';
+        })()}</div><button class="btn small" data-act="editSubject" data-id="${esc(subj.id)}">Sửa</button></div>`
       : ''
   }
   <div class="chips">${filters
@@ -293,7 +410,8 @@ function viewTasks() {
 
 function viewExpenses() {
   const all = S.all('expense');
-  const years = [...new Set([new Date().getFullYear(), ...all.map((e) => Number((e.at || '').slice(0, 4)))])].filter(Boolean).sort();
+  const per = periodicStats(expYear);
+  const years = [...new Set([new Date().getFullYear(), ...all.map((e) => Number((e.at || '').slice(0, 4))), ...per.years])].filter(Boolean).sort();
   const list = all.filter((e) => (e.at || '').startsWith(String(expYear))).sort((a, b) => (b.at || '').localeCompare(a.at || ''));
   const total = list.reduce((s, e) => s + (e.amount || 0), 0);
   const byCat = EXP_CATS.map((c) => ({ c, sum: list.filter((e) => (e.category || 'other') === c.id).reduce((s, e) => s + (e.amount || 0), 0) }))
@@ -305,22 +423,48 @@ function viewExpenses() {
   for (const e of list) (months[(e.at || '').slice(0, 7)] ||= []).push(e);
 
   const idx = years.indexOf(expYear);
+  const pmax = Math.max(1, ...per.byCat.map((x) => x.sum));
+  const periodicCard = per.total
+    ? `<div class="card total periodic">
+    <div class="card-head"><b>🔁 Chi phí định kỳ</b><span>${per.rows.reduce((s, x) => s + x.n, 0)} lần</span></div>
+    <div class="sum small">${money(per.total)}</div>
+    ${per.byCat
+      .map((x) => `<div class="bar"><span>${x.c.icon} ${x.c.name}</span><div class="track"><i style="width:${(x.sum / pmax) * 100}%"></i></div><b>${money(x.sum)}</b></div>`)
+      .join('')}
+    <div class="label sp">Từng việc</div>
+    ${per.rows
+      .slice(0, 8)
+      .map(
+        (x) => `<div class="prow" data-act="openTask" data-id="${esc(x.t.id)}"><span class="av" data-cat="${esc(x.t.category || 'other')}">${esc(x.t.icon || catOf(x.t.category).icon)}</span><b>${esc(x.t.title)}</b><span class="hint">${x.n} lần · <b class="money">${money(x.sum)}</b></span></div>`
+      )
+      .join('')}
+    ${
+      per.bySubj.length
+        ? `<div class="label sp">Theo người & thú cưng</div><div class="subj-costs">${per.bySubj
+            .map((x) => `<button class="subj-cost" data-act="subjGo" data-id="${esc(x.p.id)}"><span class="av">${esc(x.p.icon)}</span><span>${esc(x.p.name)}</span><b>${money(x.sum)}</b></button>`)
+            .join('')}</div>`
+        : ''
+    }
+  </div>`
+    : `<div class="card total periodic"><div class="card-head"><b>🔁 Chi phí định kỳ</b></div><div class="hint">Bật “Ghi chi phí” cho việc như thay lõi lọc, tẩy giun… rồi ghi số tiền mỗi lần làm, tổng sẽ hiện ở đây.</div></div>`;
   return `
-  <header class="top"><div><div class="eyebrow">Khoản chi lớn</div><h1>Chi tiêu</h1></div>${syncBadge()}</header>
+  <header class="top"><div><div class="eyebrow">Tổng năm ${expYear}: ${money(total + per.total) || '0 đ'}</div><h1>Chi tiêu</h1></div>${syncBadge()}</header>
   <div class="card total">
     <div class="year">
       <button class="icon-btn" data-act="year" data-y="${years[idx - 1] ?? ''}" ${idx > 0 ? '' : 'disabled'}>‹</button>
       <span>Năm ${expYear}</span>
       <button class="icon-btn" data-act="year" data-y="${years[idx + 1] ?? ''}" ${idx < years.length - 1 ? '' : 'disabled'}>›</button>
     </div>
+    <div class="card-head"><b>👜 Khoản chi lớn</b><span>${list.length} khoản</span></div>
     <div class="sum">${money(total) || '0 đ'}</div>
-    <div class="sub">${list.length} khoản chi</div>
     ${byCat
       .map(
         (x) => `<div class="bar"><span>${x.c.icon} ${x.c.name}</span><div class="track"><i style="width:${(x.sum / max) * 100}%"></i></div><b>${money(x.sum)}</b></div>`
       )
       .join('')}
   </div>
+  ${periodicCard}
+  <button class="btn dir-btn" data-act="shopDir">📒 Danh bạ nơi mua</button>
   ${Object.entries(months)
     .map(
       ([ym, es]) => `<section><h2>Tháng ${Number(ym.slice(5))}<span class="count">${money(es.reduce((s, e) => s + (e.amount || 0), 0))}</span></h2>
@@ -357,7 +501,8 @@ function viewSettings() {
       subjects()
         .map((p) => {
           const n = S.all('task').filter((x) => !x.finished && (x.subjects || []).includes(p.id)).length;
-          return `<div class="prow" data-act="editSubject" data-id="${esc(p.id)}"><span class="av">${esc(p.icon)}</span><b>${esc(p.name)}</b><span class="hint">${n} việc</span><span class="chev">›</span></div>`;
+          const c = subjectYearCost(p.id);
+          return `<div class="prow" data-act="editSubject" data-id="${esc(p.id)}"><span class="av">${esc(p.icon)}</span><b>${esc(p.name)}</b><span class="hint">${n} việc${c ? ` · ${money(c)}` : ''}</span><span class="chev">›</span></div>`;
         })
         .join('') || '<div class="hint">Chưa có ai. Thêm thú cưng, ông bà, con cái… để gắn vào việc và xem riêng việc của từng người.</div>'
     }
@@ -389,6 +534,12 @@ function viewSettings() {
     <div class="hint">Máy chủ kiểm tra mỗi giờ và nhắc mỗi việc từ giờ bạn chọn (mặc định 8:00). Nếu lỡ một lượt thì lượt sau vẫn nhắc, mỗi việc chỉ nhắc một lần mỗi ngày. Việc quá hạn sẽ được nhắc lại mỗi ngày cho đến khi xong.</div>
   </div></section>
 
+  <section><h2>Nơi mua</h2>
+  <div class="card form">
+    <button class="btn" data-act="shopDir">📒 Danh bạ nơi mua (${shopDirectory().length})</button>
+    <div class="hint">Shopee, người bán Zalo, cửa hàng… gom từ các lần mua. Bấm là mở link, nhắn Zalo hoặc gọi.</div>
+  </div></section>
+
   <section><h2>Dữ liệu</h2>
   <div class="card form">
     <div class="row2">
@@ -398,7 +549,7 @@ function viewSettings() {
     <label class="btn file">Nhập từ file sao lưu<input type="file" accept="application/json,.json" data-act-change="import" hidden></label>
     <button class="btn ghost" data-act="resync">Tải lại toàn bộ từ máy chủ</button>
   </div></section>
-  <p class="foot">Sổ Nhà · v1.5 · 🧡</p>`;
+  <p class="foot">Sổ Nhà · v1.6 · 🧡</p>`;
 }
 
 const views = { today: viewToday, tasks: viewTasks, expenses: viewExpenses, settings: viewSettings };
@@ -610,6 +761,9 @@ function taskForm(task = {}, prefill = null) {
       <label>Sản phẩm hay mua<input name="buyItem" value="${esc(t.buyItem || '')}" placeholder="VD: Lõi lọc số 1 Kangaroo" autocomplete="off"></label>
       <div class="label">Nơi mua quen</div>
       ${buyFields(t.buy)}
+      <label>Nhắc đặt hàng trước<select name="orderBefore">${ORDER_OPTS.map(
+        (n) => `<option value="${n}" ${n === (Number(t.orderBefore) || 0) ? 'selected' : ''}>${n ? `${n} ngày (để kịp giao hàng)` : 'Không nhắc'}</option>`
+      ).join('')}</select></label>
       <div class="hint">Không bắt buộc. Hóa đơn điện nước thì bỏ trống. Mỗi lần đánh dấu xong sẽ hỏi giá và nơi mua, điền sẵn theo lần trước.</div>
     </div>
     <label>Ghi chú<textarea name="note" rows="2" placeholder="VD: Mã KH điện PE01…">${esc(t.note || '')}</textarea></label>
@@ -724,6 +878,7 @@ function saveTask(form) {
     assignee: f.assignee === 'all' ? 'all' : Number(f.assignee),
     trackAmount: !!f.trackAmount,
     buyItem: (f.buyItem || '').trim(),
+    orderBefore: f.trackAmount ? Number(f.orderBefore) || 0 : 0,
     buy: f.trackAmount ? readBuy(form) : (old?.buy ?? null),
     note: f.note.trim(),
     finished: false,
@@ -785,7 +940,38 @@ function doneCostFields(task) {
   const showShop = hasBuy(task.buy) || task.category !== 'bill';
   return `
     <label>Số tiền<input name="amount" inputmode="decimal" placeholder="${last ? `Lần trước ${money(last.amount)}${last.buy ? ' · ' + esc(shopLabel(last.buy)) : ''}` : 'VD: 850k hoặc 1tr2'}" autocomplete="off"></label>
+    <div class="price-hint" data-price-hint hidden></div>
     ${showShop ? `<div class="label">Mua ở</div>${buyFields(task.buy)}` : ''}`;
+}
+
+/** So giá đang nhập với lần trước và giá rẻ nhất từng mua. */
+function updatePriceHint(form) {
+  const el = form.querySelector('[data-price-hint]');
+  if (!el) return;
+  const amount = parseMoney(form.elements.amount.value);
+  const logs = pricedLogs(form.dataset.id);
+  if (!amount || !logs.length) return (el.hidden = true);
+  const last = logs[0];
+  const min = logs.reduce((m, l) => (l.amount < m.amount ? l : m), logs[0]);
+  const p = pctChange(amount, last.amount);
+  const at = (l) => (l.buy ? ` · ${esc(shopLabel(l.buy))}` : '');
+  let html = '';
+  if (p >= 20) {
+    html = `⚠️ <b>Đắt hơn lần trước ${p}%</b> (${money(last.amount)}${at(last)}).`;
+    if (min.amount < amount) {
+      const go = buyHref(min.buy);
+      html += ` Rẻ nhất từng mua: <b>${money(min.amount)}</b>${at(min)}.${go ? ` <a href="${esc(go.url)}" target="_blank" rel="noopener">${go.label} ↗</a>` : ''}`;
+    }
+    el.className = 'price-hint up';
+  } else if (p <= -5) {
+    html = `🎉 Rẻ hơn lần trước ${-p}% (${money(last.amount)}${at(last)}).`;
+    el.className = 'price-hint down';
+  } else {
+    html = `Gần bằng lần trước (${money(last.amount)}${at(last)}).`;
+    el.className = 'price-hint';
+  }
+  el.innerHTML = html;
+  el.hidden = false;
 }
 
 function doneSheet(task) {
@@ -807,6 +993,14 @@ function buyCard(t, logs) {
   const priced = logs.filter((l) => l.amount);
   const b = hasBuy(t.buy) ? t.buy : logs.find((l) => hasBuy(l.buy))?.buy;
   if (!b && !priced.length && !t.buyItem) return '';
+  const lastChg = priced.length > 1 ? pctChange(priced[0].amount, priced[1].amount) : 0;
+  const orderLine = Number(t.orderBefore)
+    ? t.orderedFor && t.orderedFor === t.nextDue
+      ? `<div class="order-state ok">✓ Đã đặt hàng cho lần ${D.short(t.nextDue)} <button class="link" data-act="unordered" data-id="${t.id}">Bỏ</button></div>`
+      : needsOrder(t)
+        ? `<div class="order-state warn">🛒 Đến lúc đặt hàng <button class="btn small" data-act="ordered" data-id="${t.id}">✓ Đã đặt</button></div>`
+        : `<div class="order-state">🛒 Nhắc đặt hàng trước ${t.orderBefore} ngày</div>`
+    : '';
   const last = priced[0];
   const min = priced.reduce((m, l) => (!m || l.amount < m.amount ? l : m), null);
   const year = D.today().slice(0, 4);
@@ -821,12 +1015,13 @@ function buyCard(t, logs) {
     ${
       priced.length
         ? `<div class="buy-stats">
-      <div><small>Lần trước</small><b>${money(last.amount)}</b><span>${D.short(last.day)}${last.buy ? ' · ' + esc(shopLabel(last.buy)) : ''}</span></div>
+      <div><small>Lần trước ${chgBadge(lastChg)}</small><b>${money(last.amount)}</b><span>${D.short(last.day)}${last.buy ? ' · ' + esc(shopLabel(last.buy)) : ''}</span></div>
       ${priced.length > 1 ? `<div><small>Rẻ nhất</small><b>${money(min.amount)}</b><span>${min.buy ? esc(shopLabel(min.buy)) : D.short(min.day)}</span></div>` : ''}
       ${yr.length ? `<div><small>Năm ${year}</small><b>${money(yrSum)}</b><span>${yr.length} lần</span></div>` : ''}
     </div>`
         : ''
     }
+    ${orderLine}
     ${go ? `<a class="btn primary buy-go" href="${esc(go.url)}" target="_blank" rel="noopener">${go.label} ↗</a>` : ''}
   </div>`;
 }
@@ -836,7 +1031,8 @@ function taskDetail(id) {
     const t = S.get('task', id);
     if (!t) return closeSheet();
     const logs = S.all('log').filter((l) => l.taskId === id).sort((a, b) => (b.doneAt || '').localeCompare(a.doneAt || ''));
-    const amounts = logs.filter((l) => l.amount).slice(0, 12).reverse();
+    const priced = logs.filter((l) => l.amount);
+    const amounts = priced.slice(0, 12).reverse();
     const max = Math.max(1, ...amounts.map((l) => l.amount));
     const st = D.dueState(t);
     return `
@@ -863,10 +1059,14 @@ function taskDetail(id) {
       <div class="history">${
         logs
           .slice(0, 50)
+          .map((l) => {
+            const i = priced.indexOf(l);
+            return { ...l, _chg: i >= 0 && priced[i + 1] ? pctChange(l.amount, priced[i + 1].amount) : 0 };
+          })
           .map(
             (l) => `<div class="hrow"><span>${D.weekday(l.day)} ${D.short(l.day)}/${l.day.slice(0, 4)}${
               hasBuy(l.buy) ? `<small>${shopOf(l.buy.kind)?.icon || '🛍️'} ${esc(shopLabel(l.buy))}</small>` : ''
-            }${l.note ? `<small>${esc(l.note)}</small>` : ''}</span><span>${esc(who(l.by))}</span><b>${money(l.amount)}</b>
+            }${l.note ? `<small>${esc(l.note)}</small>` : ''}</span><span>${esc(who(l.by))}</span><b>${money(l.amount)}${chgBadge(l._chg)}</b>
               <button class="icon-btn small" data-act="delLog" data-id="${l.id}" aria-label="Xóa">×</button></div>`
           )
           .join('') || '<div class="hint">Chưa có lần nào.</div>'
@@ -918,6 +1118,71 @@ function saveSubject(form) {
   subjFilter = p.id;
   if (tab !== 'settings') actions.tab({ tab: 'tasks' });
   toast(linked ? `Đã thêm ${name} · gắn ${linked} việc có tên ${name}` : `Đã thêm ${name}`);
+}
+
+// ---------- Danh bạ nơi mua ----------
+function shopDirSheet() {
+  const render = () => {
+    const list = shopDirectory();
+    return `
+    <div class="detail">
+      <h3>📒 Danh bạ nơi mua</h3>
+      ${
+        list
+          .map((e) => {
+            const s = shopOf(e.kind);
+            const go = buyHref({ kind: e.kind, name: e.name, link: e.link }, [...e.items][0]);
+            return `<div class="shop-card">
+          <div class="shop-top"><span class="av">${s?.icon || '🛍️'}</span><div class="body"><div class="title">${esc(e.name || s?.name || e.link)}</div><div class="meta">${s ? `<span>${s.name}</span>` : ''}${e.link ? `<span class="lnk">${esc(e.link)}</span>` : ''}</div></div>
+            <button class="btn small" data-act="editShop" data-key="${esc(e.key)}">Sửa</button></div>
+          ${e.items.size ? `<div class="shop-items">${[...e.items].map((x) => `<span>${esc(x)}</span>`).join('')}</div>` : ''}
+          ${e.count ? `<div class="hint">${e.count} lần mua · tổng ${money(e.sum)} · gần nhất ${D.short(e.last.day)} (${money(e.last.amount)})</div>` : ''}
+          ${e.note ? `<div class="hint">📝 ${esc(e.note)}</div>` : ''}
+          ${go ? `<a class="btn primary small" href="${esc(go.url)}" target="_blank" rel="noopener">${go.label} ↗</a>` : ''}
+        </div>`;
+          })
+          .join('') || '<div class="hint">Chưa có nơi mua nào. Khi đánh dấu xong việc có ghi chi phí, nơi mua sẽ tự vào đây.</div>'
+      }
+      <button class="btn" data-act="newShop">＋ Thêm nơi mua</button>
+    </div>`;
+  };
+  openSheet(render(), () => {
+    const panel = $('#sheet .sheet-panel');
+    if (panel && panel.querySelector('.detail h3')?.textContent.includes('Danh bạ')) panel.innerHTML = '<div class="grab"></div>' + render();
+  });
+}
+
+function shopForm(e = null) {
+  const isNew = !e;
+  openSheet(`
+  <form class="form" data-form="shop" data-key="${esc(e?.key || '')}">
+    <h3>${isNew ? 'Thêm nơi mua' : 'Sửa nơi mua'}</h3>
+    ${buyFields({ kind: e?.kind, name: e?.name, link: e?.link })}
+    <label>Ghi chú<input name="note" value="${esc(e?.note || '')}" placeholder="VD: giao nhanh, hay có mã giảm giá" autocomplete="off"></label>
+    ${isNew ? '' : '<div class="hint">Đổi tên, loại hoặc link sẽ cập nhật cho mọi việc và lịch sử dùng nơi mua này.</div>'}
+    <div class="actions">
+      <button type="button" class="btn" data-act="shopDir">Quay lại</button>
+      <button type="submit" class="btn primary">${isNew ? 'Thêm' : 'Lưu'}</button>
+    </div>
+    ${e?.rec ? `<button type="button" class="btn danger ghost" data-act="delShop" data-id="${esc(e.rec.id)}">Xóa khỏi danh bạ</button>` : ''}
+  </form>`);
+}
+
+function saveShop(form) {
+  const b = readBuy(form);
+  if (!b || !b.name) return toast('Nhập tên shop / người bán');
+  const note = form.elements.note.value.trim();
+  const oldKey = form.dataset.key;
+  const old = oldKey ? shopDirectory().find((x) => x.key === oldKey) : null;
+  const rec = old?.rec || shopRecords().find((r) => shopKey(r) === shopKey(b));
+  S.put('config', { ...(rec || { id: `shop:${S.uid()}` }), name: b.name, kind: b.kind, link: b.link, note });
+  if (old) {
+    const nb = { kind: b.kind, name: b.name, link: b.link };
+    for (const t of S.all('task')) if (hasBuy(t.buy) && shopKey(t.buy) === oldKey) S.put('task', { ...t, buy: nb });
+    for (const l of S.all('log')) if (hasBuy(l.buy) && shopKey(l.buy) === oldKey) S.put('log', { ...l, buy: nb });
+  }
+  toast('Đã lưu nơi mua');
+  shopDirSheet();
 }
 
 // ---------- Form chi tiêu ----------
@@ -1044,6 +1309,30 @@ const actions = {
     render();
   },
   newSubject: () => subjectForm(),
+  subjGo: (d) => {
+    subjFilter = d.id;
+    taskFilter = 'all';
+    actions.tab({ tab: 'tasks' });
+  },
+  ordered: (d) => {
+    const t = S.get('task', d.id);
+    if (!t) return;
+    const prev = { ...t };
+    S.put('task', { ...t, orderedFor: t.nextDue });
+    toast('Đã đánh dấu đặt hàng', 'Hoàn tác', () => S.put('task', prev));
+  },
+  unordered: (d) => {
+    const t = S.get('task', d.id);
+    if (t) S.put('task', { ...t, orderedFor: null });
+  },
+  shopDir: () => shopDirSheet(),
+  newShop: () => shopForm(),
+  editShop: (d) => shopForm(shopDirectory().find((x) => x.key === d.key) || null),
+  delShop: (d) => {
+    if (!confirm('Xóa nơi mua này khỏi danh bạ? Lịch sử mua vẫn giữ nguyên.')) return;
+    S.remove('config', d.id);
+    shopDirSheet();
+  },
   pickShop: (d, el) => {
     const form = el.closest('form');
     const on = form.elements.buyKind.value === d.v;
@@ -1150,6 +1439,7 @@ const actions = {
 };
 
 document.addEventListener('click', (e) => {
+  if (e.target.closest('a[href]')) return; // link Shopee/Zalo/bản đồ: để trình duyệt tự mở
   const el = e.target.closest('[data-act]');
   if (el) {
     e.preventDefault();
@@ -1166,6 +1456,7 @@ document.addEventListener('click', (e) => {
 document.addEventListener('input', (e) => {
   if (e.target.matches('[name=lunarDays], [name=lunarDay], [name=lunarMonth]')) updateLunarPreview(e.target.form);
   if (e.target.matches('form[data-form=task] [name=title]')) autoPickSubj(e.target.form);
+  if (e.target.matches('form[data-form=done] [name=amount]')) updatePriceHint(e.target.form);
   // chọn tên shop đã dùng → điền sẵn loại và link
   if (e.target.matches('[name=buyName]')) {
     const form = e.target.form;
@@ -1210,6 +1501,7 @@ document.addEventListener('submit', async (e) => {
   if (kind === 'task') saveTask(form);
   else if (kind === 'expense') saveExpense(form);
   else if (kind === 'subject') saveSubject(form);
+  else if (kind === 'shop') saveShop(form);
   else if (kind === 'done') {
     const t = S.get('task', form.dataset.id);
     const f = Object.fromEntries(new FormData(form));
