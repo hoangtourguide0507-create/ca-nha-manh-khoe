@@ -218,7 +218,7 @@ function viewSettings() {
   <section><h2>Kết nối máy chủ</h2>
   <form class="card form" data-form="connect">
     <label>Địa chỉ Worker<input name="api" type="url" placeholder="https://so-nha-api.xxx.workers.dev" value="${esc(S.device.api)}" autocomplete="off" autocapitalize="off"></label>
-    <label>Mã nhà<input name="key" type="password" placeholder="Mã bí mật đã đặt trên Cloudflare" value="${esc(S.device.key)}" autocomplete="off"></label>
+    <label>Mã nhà (bỏ trống nếu không đặt)<input name="key" type="password" placeholder="Không bắt buộc" value="${esc(S.device.key)}" autocomplete="off"></label>
     <button class="btn primary" type="submit">Lưu & kiểm tra</button>
     <div class="hint">${statusText(st)}</div>
   </form></section>

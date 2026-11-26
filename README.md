@@ -48,10 +48,12 @@ worker/worker.js                                              ← máy chủ (Cl
 4. Vào Worker → **Settings → Bindings → Add → D1 database**:
    - Variable name: `DB`
    - Database: `so-nha-db`
-5. **Settings → Variables and Secrets → Add**:
+5. *(Không bắt buộc)* Muốn khóa bằng mã nhà thì vào **Settings → Variables and Secrets → Add**:
    - Type: **Secret**
    - Name: `HOUSE_KEY`
-   - Value: một mã bí mật đủ dài, ví dụ `nha-minh-2026-hoa-sen-73`. Hai vợ chồng sẽ nhập mã này vào app.
+   - Value: một mã bí mật, sau đó nhập mã này vào app trên cả hai máy.
+
+   Nếu không đặt, ai biết địa chỉ Worker cũng xem và sửa được dữ liệu. Có thể thêm mã nhà bất cứ lúc nào mà không phải sửa code.
 6. **Settings → Trigger Events → Add → Cron Triggers** → nhập `0 * * * *` (chạy mỗi giờ) → **Add**.
 7. Chép địa chỉ Worker, dạng `https://so-nha-api.<tên-bạn>.workers.dev`. Mở địa chỉ này trên trình duyệt, thấy `"configured":true` là xong.
 
@@ -62,7 +64,7 @@ worker/worker.js                                              ← máy chủ (Cl
 1. Mở link GitHub Pages bằng **Safari** → bấm nút **Chia sẻ** → **Thêm vào MH chính**.
 2. Mở **Sổ Nhà** từ màn hình chính (không mở trong Safari).
 3. Vào tab **Cài đặt**:
-   - Dán *Địa chỉ Worker*, nhập *Mã nhà* → **Lưu & kiểm tra**.
+   - Dán *Địa chỉ Worker* (bỏ trống *Mã nhà* nếu không đặt) → **Lưu & kiểm tra**.
    - *Thành viên*: sửa tên hai người (chỉ cần làm trên một máy, máy kia tự cập nhật) → chọn **Tôi là** đúng người.
    - **Bật thông báo** → cho phép → bấm **Gửi thử** để kiểm tra.
 
@@ -79,7 +81,7 @@ Thông báo trên iPhone cần iOS 16.4 trở lên, và app phải được mở
 
 | Hiện tượng | Cách xử lý |
 |---|---|
-| "Sai mã nhà" | Kiểm tra secret `HOUSE_KEY` trên Cloudflare, chú ý phân biệt hoa thường |
+| "Sai mã nhà" | Mã trong app phải giống secret `HOUSE_KEY` trên Cloudflare (phân biệt hoa thường), hoặc xóa secret nếu không dùng mã |
 | "Chưa gắn D1 database…" | Làm lại Bước 2.4, tên biến phải đúng là `DB` |
 | Không thấy nút bật thông báo hoạt động | Phải mở app từ màn hình chính, không mở trong Safari |
 | Gửi thử được nhưng không có nhắc tự động | Kiểm tra Cron Trigger `0 * * * *` và giờ nhắc của việc. Bấm *Nhắc ngay các việc đến hạn* để thử |

@@ -6,7 +6,7 @@
 //
 //  Cần cấu hình trên Cloudflare (xem README):
 //    - Binding D1 tên  DB
-//    - Secret          HOUSE_KEY   (mã nhà, hai vợ chồng nhập giống nhau)
+//    - (Không bắt buộc) Secret HOUSE_KEY — nếu đặt thì app phải nhập đúng mã nhà
 //    - Cron Trigger    0 * * * *
 //  Không cần tạo khóa VAPID: Worker tự tạo lần đầu và lưu vào D1.
 // =====================================================================
@@ -22,10 +22,12 @@ export default {
       await ensureSchema(env);
       const url = new URL(request.url);
       if (url.pathname === '/' && request.method === 'GET') {
-        return json({ app: 'Sổ Nhà API', ok: true, configured: !!env.HOUSE_KEY && !!env.DB });
+        return json({ app: 'Sổ Nhà API', ok: true, configured: !!env.DB, houseKey: !!env.HOUSE_KEY });
       }
-      if (!env.HOUSE_KEY) return json({ error: 'Chưa đặt secret HOUSE_KEY trên Cloudflare' }, 500);
-      if (!safeEqual(request.headers.get('X-House-Key') || '', env.HOUSE_KEY)) return json({ error: 'Sai mã nhà' }, 401);
+      // Mã nhà là tùy chọn: chỉ kiểm tra khi đã đặt secret HOUSE_KEY
+      if (env.HOUSE_KEY && !safeEqual(request.headers.get('X-House-Key') || '', env.HOUSE_KEY)) {
+        return json({ error: 'Sai mã nhà' }, 401);
+      }
 
       const body = request.method === 'POST' ? await request.json().catch(() => ({})) : {};
       switch (`${request.method} ${url.pathname}`) {

@@ -95,7 +95,7 @@ export function importJSON(text) {
 
 // ---------- API ----------
 export async function api(path, body) {
-  if (!device.api || !device.key) throw new Error('Chưa nhập địa chỉ Worker và mã nhà');
+  if (!device.api) throw new Error('Chưa nhập địa chỉ Worker');
   const res = await fetch(device.api.replace(/\/+$/, '') + path, {
     method: body === undefined ? 'GET' : 'POST',
     headers: { 'Content-Type': 'application/json', 'X-House-Key': device.key },
@@ -131,7 +131,7 @@ function apply(row) {
 }
 
 export async function sync() {
-  if (!device.api || !device.key) return setStatus('unconfigured');
+  if (!device.api) return setStatus('unconfigured');
   if (!navigator.onLine) return setStatus('offline');
   if (syncing) {
     again = true;
