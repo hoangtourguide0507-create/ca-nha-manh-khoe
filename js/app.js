@@ -13,7 +13,7 @@ const CATS = [
   { id: 'spirit', name: 'Cúng giỗ', icon: '🪔' },
   { id: 'other', name: 'Khác', icon: '📌' },
 ];
-const APP_VERSION = 'v1.23';
+const APP_VERSION = 'v1.24';
 
 const EXP_CATS = [
   { id: 'grocery', name: 'Đi chợ & siêu thị', icon: '🛒' },
@@ -279,6 +279,7 @@ let tab = localStorage.getItem('sonha:tab') || 'today';
 let expYear = new Date().getFullYear();
 let expMonth = D.today().slice(0, 7); // tháng đang xem trên lịch chi tiêu
 let expDay = null; // ngày đang chọn trên lịch (null = cả tháng)
+let expQ = ''; // ô tìm kiếm chi tiêu
 let taskFilter = 'all';
 let subjFilter = null;
 
@@ -453,6 +454,9 @@ function viewExpenses() {
     : `<div class="card total periodic"><div class="card-head"><b>🔁 Chi phí định kỳ</b></div><div class="hint">Bật “Ghi chi phí” cho việc như thay lõi lọc, tẩy giun… rồi ghi số tiền mỗi lần làm, tổng sẽ hiện ở đây.</div></div>`;
   return `
   <header class="top"><div><div class="eyebrow">Tổng năm ${expYear}: ${money(total + per.total) || '0 đ'}</div><h1>Chi tiêu</h1></div>${syncBadge()}</header>
+  <div class="exp-search"><span>🔍</span><input type="search" name="expQ" value="${esc(expQ)}" placeholder="Tìm: highland, ministop, sữa…" autocomplete="off" enterkeyhint="search"><button class="x" data-act="expSearch" data-q="" ${expQ ? '' : 'hidden'} aria-label="Xóa tìm kiếm">✕</button></div>
+  <div id="expSearchOut">${expQ.trim() ? searchView(expQ) : ''}</div>
+  <div id="expNormal" ${expQ.trim() ? 'hidden' : ''}>
   <div class="card total">
     <div class="year">
       <button class="icon-btn" data-act="year" data-y="${years[idx - 1] ?? ''}" ${idx > 0 ? '' : 'disabled'}>‹</button>
@@ -474,7 +478,8 @@ function viewExpenses() {
     <button class="btn" data-act="priceBook">🏷️ Giá từng món</button>
     <button class="btn" data-act="shopDir">📒 Nơi mua</button>
   </div>
-  ${expenseCalendar(all)}`;
+  ${expenseCalendar(all)}
+  </div>`;
 }
 
 // ---------- Lịch chi tiêu (dương + âm) ----------
@@ -494,10 +499,11 @@ function moneyShort(n) {
 }
 const shiftMonth = (ym, n) => D.addMonths(`${ym}-01`, n).slice(0, 7);
 
-function expenseRow(e) {
+function expenseRow(e, withDate = false) {
+  const shop = e.shop && fold(e.shop) !== fold(e.title) ? `<span class="shop-link" data-act="expSearch" data-q="${esc(shopCore(e.shop))}">📍 ${esc(shorten(e.shop, 26))}</span>` : '';
   return `<div class="card task" data-act="editExpense" data-id="${e.id}">
     <div class="ico" data-cat="${esc(e.category || 'other')}">${catOf(e.category, EXP_CATS).icon}</div>
-    <div class="body"><div class="title">${esc(e.title)}</div><div class="meta"><span>${(e.at || '').slice(11, 16) || '—'}</span>${e.items?.length ? `<span>🧾 ${e.items.length} món</span>` : ''}${e.method ? `<span>${esc(e.method)}</span>` : ''}<span>${esc(who(e.by))}</span></div></div>
+    <div class="body"><div class="title">${esc(e.title)}</div><div class="meta">${shop}<span>${withDate ? fmtDateTime(e.at) : (e.at || '').slice(11, 16) || '—'}</span>${e.items?.length ? `<span>🧾 ${e.items.length} món</span>` : ''}${e.method ? `<span>${esc(e.method)}</span>` : ''}<span>${esc(who(e.by))}</span></div></div>
     <div class="amount">${money(e.amount)}</div></div>`;
 }
 
@@ -566,6 +572,164 @@ function expenseCalendar(all) {
   </div>
   ${groups}
   ${!inMonth.length && !expDay ? `<div class="empty"><div class="big">👜</div><div>Chưa có khoản chi nào trong tháng ${m}/${y}.</div><div class="hint">Bấm nút 📷 giữa thanh dưới để chụp bill hoặc chọn ảnh đơn Shopee, MoMo…</div></div>` : ''}`;
+}
+
+// ---------- Tìm kiếm chi tiêu ----------
+// Bỏ chữ pháp lý để "Công Ty TNHH Ministop Việt Nam" và "Ministop" là một nơi.
+const LEGAL = /\b(cong ty|cty|tnhh|co phan|cp|mtv|mot thanh vien|tm dv|thuong mai|dich vu|chi nhanh|cn|viet nam|vn|vietnam|ho kinh doanh|hkd|jsc|co\.?,? ?ltd|ltd|company|corp)\b/g;
+function placeKey(name) {
+  return fold(name).replace(/[.'’]/g, '').replace(/[^a-z0-9 ]+/g, ' ').replace(LEGAL, ' ').replace(/\s+/g, ' ').trim();
+}
+/** Tên gọn để tìm: "Công Ty Tnhh Ministop Việt Nam" → "Ministop". */
+function shopCore(name) {
+  const key = placeKey(name);
+  if (!key) return name;
+  const words = String(name).split(/\s+/).filter((w) => key.split(' ').includes(fold(w).replace(/[^a-z0-9]+/g, '')));
+  return words.length ? words.join(' ') : name;
+}
+/** Tên đã từng dùng trùng nơi (bỏ chữ pháp lý, hoa thường, dấu) → dùng lại tên quen thuộc nhất. */
+function canonicalShop(name) {
+  const key = placeKey(name);
+  if (!key || key.length < 3) return name;
+  const count = new Map();
+  for (const e of S.all('expense')) if (e.shop && placeKey(e.shop) === key) count.set(e.shop, (count.get(e.shop) || 0) + 1);
+  for (const x of knownShops()) if (x.name && placeKey(x.name) === key) count.set(x.name, (count.get(x.name) || 0) + 1);
+  if (!count.size) return name;
+  return [...count.entries()].sort((a, b) => b[1] - a[1] || a[0].length - b[0].length)[0][0];
+}
+
+function searchHits(q) {
+  const f = (x) => fold(x).replace(/[.'’]/g, '');
+  const words = f(q).split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  const hits = [];
+  for (const e of S.all('expense')) {
+    if (!e.at) continue;
+    const head = f(`${e.title} ${e.shop || ''} ${e.note || ''} ${e.method || ''}`);
+    const items = (e.items || []).filter((i) => words.every((w) => f(i.name).includes(w)));
+    const hay = `${head} ${(e.items || []).map((i) => f(i.name)).join(' ')}`;
+    if (!words.every((w) => hay.includes(w))) continue;
+    const byItem = !words.every((w) => head.includes(w)) && items.length > 0;
+    hits.push({ e, items, byItem });
+  }
+  return hits.sort((a, b) => b.e.at.localeCompare(a.e.at));
+}
+
+function agoText(day) {
+  const n = D.diffDays(day, D.today());
+  if (n <= 0) return 'hôm nay';
+  if (n === 1) return 'hôm qua';
+  if (n < 30) return `${n} ngày trước`;
+  if (n < 365) return `${Math.round(n / 30)} tháng trước`;
+  return `${(n / 365).toFixed(1).replace('.', ',')} năm trước`;
+}
+
+function searchView(q) {
+  const hits = searchHits(q);
+  if (!hits.length)
+    return `<div class="empty"><div class="big">🔍</div><div>Không thấy khoản chi nào có “${esc(q.trim())}”.</div><div class="hint">Thử gõ ngắn hơn, VD: “highland” thay vì “highlands coffee vincom”.</div></div>`;
+
+  // Chỉ khớp theo tên món (VD: “sữa”) → tính tiền theo món; còn lại tính cả hóa đơn.
+  const itemMode = hits.every((h) => h.byItem);
+  const val = (h) => (itemMode ? h.items.reduce((s, i) => s + (i.amount || (i.price || 0) * (i.qty || 1)), 0) : h.e.amount || 0);
+  const total = hits.reduce((s, h) => s + val(h), 0);
+  const n = hits.length;
+  const lastDay = hits[0].e.at.slice(0, 10);
+  const firstDay = hits[n - 1].e.at.slice(0, 10);
+
+  // 6 tháng gần nhất (tính đến tháng hiện tại)
+  const nowYm = D.today().slice(0, 7);
+  const months = Array.from({ length: 6 }, (_, i) => shiftMonth(nowYm, i - 5));
+  const perMonth = Object.fromEntries(months.map((m) => [m, 0]));
+  for (const h of hits) {
+    const m = h.e.at.slice(0, 7);
+    if (m in perMonth) perMonth[m] += val(h);
+  }
+  const mmax = Math.max(1, ...Object.values(perMonth));
+  const chart = Object.values(perMonth).some(Boolean)
+    ? `<div class="label sp">6 tháng gần nhất</div><div class="chart s-chart">${months
+        .map((m) => `<div class="col"><b>${perMonth[m] ? moneyShort(perMonth[m]) : ''}</b><i style="height:${(perMonth[m] / mmax) * 100}%"></i><span>T${Number(m.slice(5))}</span></div>`)
+        .join('')}</div>`
+    : '';
+
+  // Nơi mua (khi kết quả rơi vào nhiều nơi, VD gõ “cafe”)
+  const shops = new Map();
+  for (const h of hits) {
+    const name = h.e.shop ? canonicalShop(h.e.shop) : h.e.title;
+    const k = placeKey(name) || fold(name);
+    const x = shops.get(k) || { name, sum: 0, n: 0 };
+    x.sum += val(h);
+    x.n++;
+    shops.set(k, x);
+  }
+  const shopRows =
+    shops.size > 1
+      ? `<div class="label sp">Theo nơi mua</div>${[...shops.values()]
+          .sort((a, b) => b.sum - a.sum)
+          .slice(0, 5)
+          .map((x) => `<div class="prow" data-act="expSearch" data-q="${esc(shopCore(x.name))}"><b>${esc(shorten(x.name, 30))}</b><span class="hint">${x.n} lần · <b class="money">${money(x.sum)}</b></span></div>`)
+          .join('')}`
+      : '';
+
+  // Món hay mua: theo món khớp (nếu tìm theo món) hoặc mọi món trong các hóa đơn tìm được
+  const items = new Map();
+  for (const h of hits)
+    for (const i of itemMode ? h.items : h.e.items || []) {
+      const k = fold(i.name);
+      const x = items.get(k) || { name: i.name, qty: 0, n: 0, sum: 0, last: null };
+      x.qty += Number(i.qty) || 1;
+      x.n++;
+      x.sum += i.amount || (i.price || 0) * (i.qty || 1);
+      if (x.last == null && i.price) x.last = i.price; // hits đã xếp mới → cũ
+      items.set(k, x);
+    }
+  const itemRows = items.size
+    ? `<div class="label sp">${itemMode ? 'Các món khớp' : 'Món hay mua'}</div>${[...items.values()]
+        .sort((a, b) => b.n - a.n || b.sum - a.sum)
+        .slice(0, 5)
+        .map((x) => `<div class="prow"><b>${esc(shorten(x.name, 30))}</b><span class="hint">${x.n} lần${x.last ? ` · giá gần nhất <b class="money">${money(x.last)}</b>` : ''}</span></div>`)
+        .join('')}`
+    : '';
+
+  // Danh sách theo tháng
+  const byMonth = new Map();
+  for (const h of hits) {
+    const m = h.e.at.slice(0, 7);
+    if (!byMonth.has(m)) byMonth.set(m, []);
+    byMonth.get(m).push(h);
+  }
+  const list = [...byMonth.entries()]
+    .map(
+      ([m, hs]) => `<section><h2>Tháng ${Number(m.slice(5))}/${m.slice(0, 4)}<span class="count">${money(hs.reduce((s, h) => s + val(h), 0))}</span></h2>${hs
+        .map((h) => expenseRow(h.e, true) + (h.byItem ? `<div class="hit-items">🧾 ${h.items.map((i) => `${esc(shorten(i.name, 28))}${i.price ? ` · ${money(i.price)}` : ''}`).join(' · ')}</div>` : ''))
+        .join('')}</section>`
+    )
+    .join('');
+
+  return `
+  <div class="card total s-sum">
+    <div class="card-head"><b>“${esc(q.trim())}”</b><span>${n} lần${itemMode ? ' · tính theo món' : ''}</span></div>
+    <div class="sum">${money(total) || '0 đ'}</div>
+    <div class="s-stats">
+      <div><small>Trung bình / lần</small><b>${money(total / n)}</b></div>
+      <div><small>Lần gần nhất</small><b>${agoText(lastDay)}</b><small>${D.short(lastDay)}/${lastDay.slice(0, 4)}</small></div>
+      <div><small>Lần đầu</small><b>${D.short(firstDay)}/${firstDay.slice(2, 4)}</b><small>${agoText(firstDay)}</small></div>
+    </div>
+    ${chart}
+    ${shopRows}
+    ${itemRows}
+  </div>
+  ${list}`;
+}
+
+function setExpQ(q) {
+  expQ = q;
+  const out = $('#expSearchOut');
+  if (!out) return;
+  out.innerHTML = q.trim() ? searchView(q) : '';
+  $('#expNormal').hidden = !!q.trim();
+  const x = $('.exp-search .x');
+  if (x) x.hidden = !q;
 }
 
 function viewSettings() {
@@ -686,6 +850,12 @@ function scheduleRender() {
     renderQueued = false;
     // không vẽ lại khi đang gõ trong form cài đặt
     if (tab === 'settings' && document.activeElement?.matches('#main input')) return;
+    // đang gõ tìm kiếm: chỉ làm mới kết quả, không vẽ lại ô gõ
+    if (document.activeElement?.matches('#main [name=expQ]')) {
+      setExpQ(expQ);
+      if (sheetRefresh) sheetRefresh();
+      return;
+    }
     render();
     if (sheetRefresh) sheetRefresh();
   });
@@ -1353,7 +1523,8 @@ function expenseForm(e = {}, scan = null) {
     ${
       isNew
         ? ''
-        : `<button type="button" class="btn" data-act="followUp" data-id="${e.id}">＋ Tạo nhắc kèm (bảo hành, bảo dưỡng…)</button>
+        : `${e.shop || e.title ? `<button type="button" class="btn" data-act="expSearch" data-q="${esc(shopCore(e.shop || e.title))}">📊 Lịch sử chi ở “${esc(shorten(shopCore(e.shop || e.title), 24))}”</button>` : ''}
+           <button type="button" class="btn" data-act="followUp" data-id="${e.id}">＋ Tạo nhắc kèm (bảo hành, bảo dưỡng…)</button>
            <button type="button" class="btn danger ghost" data-act="delExpense" data-id="${e.id}">Xóa khoản chi</button>`
     }
   </form>`);
@@ -1381,7 +1552,7 @@ function saveExpense(form) {
     category: f.category,
     method: f.method,
     by: f.by === 'all' ? 'all' : Number(f.by),
-    shop: (f.shop || '').trim(),
+    shop: (f.shop || '').trim() ? canonicalShop((f.shop || '').trim()) : '',
     items: items.length ? items : null,
     adjust: items.length ? Number(form.dataset.adjust) || 0 : 0,
     note: f.note.trim(),
@@ -1731,7 +1902,7 @@ function scanToExpense(s) {
     };
   }
   if (s.kind === 'payment') {
-    const payee = s.vendor ? titleCase(s.vendor) : '';
+    const payee = s.vendor ? canonicalShop(titleCase(s.vendor)) : '';
     const transfer = s.source === 'bank' || /chuyen tien|chuyen khoan/.test(fold(s.content || ''));
     return {
       title: transfer ? s.content || (payee ? `Chuyển tiền cho ${payee}` : 'Chuyển tiền') : payee || s.content || `Thanh toán ${s.sourceName}`,
@@ -1743,7 +1914,7 @@ function scanToExpense(s) {
       note: [s.sourceName, transfer && payee && `Người nhận: ${payee}`, !transfer && s.content, s.orderId && `Mã GD ${s.orderId}`].filter(Boolean).join(' · '),
     };
   }
-  const shop = s.vendor ? titleCase(s.vendor.trim()) : '';
+  const shop = s.vendor ? canonicalShop(titleCase(s.vendor.trim())) : '';
   return {
     title: shop || 'Đi siêu thị',
     shop,
@@ -1908,6 +2079,15 @@ const actions = {
     expYear = Number(d.m.slice(0, 4));
     expDay = null;
     render();
+  },
+  expSearch: (d) => {
+    closeSheet();
+    tab = 'expenses';
+    localStorage.setItem('sonha:tab', tab);
+    expQ = d.q || '';
+    render();
+    if (expQ) window.scrollTo(0, 0);
+    else $('[name=expQ]')?.blur();
   },
   expDay: (d) => {
     expDay = expDay === d.d ? null : d.d;
@@ -2120,6 +2300,7 @@ document.addEventListener('input', (e) => {
   if (e.target.matches('form[data-form=done] [name=amount]')) updatePriceHint(e.target.form);
   if (e.target.matches('.item-row input')) onItemInput(e.target);
   if (e.target.matches('form[data-form=expense] [name=amount]')) onAmountInput(e.target);
+  if (e.target.matches('[name=expQ]')) setExpQ(e.target.value);
   if (e.target.matches('[name=priceQ]')) $('#sheet .price-list').innerHTML = priceRows(e.target.value);
   // chọn tên shop đã dùng → điền sẵn loại và link
   if (e.target.matches('[name=buyName]')) {
@@ -2142,6 +2323,11 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     const inputs = [...e.target.form.querySelectorAll('.item-row input')];
     inputs[inputs.indexOf(e.target) + 1]?.focus();
+    return;
+  }
+  if (e.key === 'Enter' && e.target.matches('[name=expQ]')) {
+    e.preventDefault();
+    e.target.blur(); // ẩn bàn phím để xem kết quả
     return;
   }
   if (e.key === 'Enter' && e.target.matches('[name=newSubjName], [name=newSubjIcon]')) {
