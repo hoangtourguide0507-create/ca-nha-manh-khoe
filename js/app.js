@@ -13,6 +13,8 @@ const CATS = [
   { id: 'spirit', name: 'Cúng giỗ', icon: '🪔' },
   { id: 'other', name: 'Khác', icon: '📌' },
 ];
+const APP_VERSION = 'v1.12';
+
 const EXP_CATS = [
   { id: 'grocery', name: 'Đi chợ & siêu thị', icon: '🛒' },
   { id: 'online', name: 'Mua online', icon: '🛍️' },
@@ -557,7 +559,7 @@ function viewSettings() {
     <label class="btn file">Nhập từ file sao lưu<input type="file" accept="application/json,.json" data-act-change="import" hidden></label>
     <button class="btn ghost" data-act="resync">Tải lại toàn bộ từ máy chủ</button>
   </div></section>
-  <p class="foot">Sổ Nhà · v1.11 · 🧡</p>`;
+  <p class="foot">Sổ Nhà · ${APP_VERSION} · 🧡</p>`;
 }
 
 const views = { today: viewToday, tasks: viewTasks, expenses: viewExpenses, settings: viewSettings };
@@ -1408,34 +1410,64 @@ async function runScan(files, screenshot = false) {
   openSheet(`<div class="detail scan-sheet">
     <h3>${screenshot ? '📱 Đang đọc ảnh đơn hàng' : '📷 Đang đọc hóa đơn'}</h3>
     <div class="scan-prog"><i></i></div>
-    <div class="hint" data-scan-stage>Đang mở ảnh…</div>
-    <div class="hint">${localStorage.getItem('sonha:ocrReady') ? `Thường mất 10–40 giây${files.length > 1 ? ' mỗi ảnh' : ''}.` : 'Lần đầu phải tải bộ đọc chữ nên có thể mất 1–3 phút.'} Ảnh chỉ xử lý trên máy này, không gửi đi đâu.</div>
+    <div class="hint" data-scan-stage>Đang tải phần mềm đọc chữ…</div>
+    <div class="hint">${localStorage.getItem('sonha:ocrReady') ? `Thường mất 10–40 giây${files.length > 1 ? ' mỗi ảnh' : ''}.` : 'Lần đầu phải tải bộ đọc chữ khoảng 110 MB, nên dùng Wi-Fi.'} Ảnh chỉ xử lý trên máy này, không gửi đi đâu.</div>
     <button class="btn" data-act="closeSheet">Hủy quét</button>
   </div>`);
   scanAbort = ctrl;
+  // tự báo lỗi nếu một bước đứng yên quá lâu (mạng rớt, máy thiếu bộ nhớ…)
+  let stage = 'tải phần mềm đọc chữ (ocr.js)';
+  let lastTick = Date.now();
+  let stalled = false;
+  const watchdog = setInterval(() => {
+    if (Date.now() - lastTick > 90000) {
+      stalled = true;
+      ctrl.abort();
+    }
+  }, 3000);
+  const progress = (p, text) => {
+    lastTick = Date.now();
+    stage = text.replace(/…$/, '');
+    const bar = $('#sheet .scan-prog i');
+    if (bar) bar.style.width = `${p}%`;
+    const st = $('#sheet [data-scan-stage]');
+    if (st) st.textContent = /MB/.test(text) ? stage : `${stage} · ${p}%`;
+  };
   try {
-    const { scanReceipt } = await import('./ocr/ocr.js');
-    const r = await scanReceipt(files, {
-      screenshot,
-      signal: ctrl.signal,
-      onProgress: (p, stage) => {
-        const bar = $('#sheet .scan-prog i');
-        if (bar) bar.style.width = `${p}%`;
-        const st = $('#sheet [data-scan-stage]');
-        if (st) st.textContent = `${stage.replace(/…$/, '')} · ${p}%`;
-      },
-    });
-    if (ctrl.signal.aborted) return;
+    const ocr = await import('./ocr/ocr.js');
+    if (ctrl.signal.aborted) throw new Error('aborted');
+    progress(0, 'Đang mở ảnh…');
+    const r = await ocr.scanReceipt(files, { screenshot, signal: ctrl.signal, onProgress: progress });
+    if (ctrl.signal.aborted) throw new Error('aborted');
+    clearInterval(watchdog);
     scanAbort = null;
     localStorage.setItem('sonha:ocrReady', '1');
     expenseForm(scanToExpense(r.summary), r.summary);
   } catch (err) {
-    if (ctrl.signal.aborted || err?.code === 'OCR_CANCELLED') return;
+    clearInterval(watchdog);
+    if (ctrl.signal.aborted && !stalled) return; // người dùng bấm Hủy
     scanAbort = null;
-    closeSheet();
-    toast(err?.code ? err.message : 'Không quét được ảnh. Kiểm tra mạng rồi thử lại.', 'Nhập tay', () => expenseForm({ category: screenshot ? 'online' : 'grocery' }));
+    if (stalled) import('./ocr/ocr.js').then((m) => m.terminateOcrWorker()).catch(() => {});
+    const detail = stalled
+      ? `Đứng yên hơn 90 giây ở bước: ${stage}`
+      : err?.detail || `${err?.name || 'Error'}: ${err?.message || err}`;
+    scanFailed(files, screenshot, stalled ? 'Quét bị kẹt quá lâu.' : err?.code === 'OCR_FAILED' ? err.message : 'Không tải được bộ đọc chữ.', detail);
   }
 }
+
+function scanFailed(files, screenshot, message, detail) {
+  const ua = navigator.userAgent.match(/(iPhone|iPad|Android)[^;)]*|OS \d+_\d+|Version\/[\d.]+|Chrome\/\d+|Safari\/[\d.]+/g)?.join(' ') || '';
+  openSheet(`<div class="detail scan-sheet">
+    <h3>😿 ${esc(message)}</h3>
+    <div class="hint">Gợi ý: dùng Wi-Fi cho lần quét đầu (tải 110 MB), đóng bớt app khác để máy đủ bộ nhớ, rồi bấm Thử lại. Nếu vẫn lỗi, chụp màn hình này gửi lại để sửa.</div>
+    <pre class="scan-err">${esc(detail)}\n${esc(ua)} · Sổ Nhà ${esc(APP_VERSION)}</pre>
+    <button class="btn primary" data-act="scanRetry">Thử lại</button>
+    <button class="btn" data-act="scanManual">Nhập tay</button>
+  </div>`);
+  lastScan = { files, screenshot };
+}
+
+let lastScan = null;
 
 const titleCase = (s) =>
   s === s.toLocaleUpperCase('vi') ? s.toLocaleLowerCase('vi').replace(/(^|\s)(\S)/g, (_, a, b) => a + b.toLocaleUpperCase('vi')) : s;
@@ -1654,6 +1686,8 @@ const actions = {
   scanCamera: () => startScan('camera'),
   scanPaper: () => startScan('paper'),
   scanScreens: () => startScan('screens'),
+  scanRetry: () => lastScan && runScan(lastScan.files, lastScan.screenshot),
+  scanManual: () => expenseForm({ category: lastScan?.screenshot ? 'online' : 'grocery' }),
   priceBook: () => priceBook(),
   addItemRow: (d, el) => {
     const box = el.closest('.items-box');

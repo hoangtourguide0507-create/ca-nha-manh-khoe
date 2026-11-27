@@ -12,10 +12,10 @@ import { validateReceipt, type ReceiptCheck } from '@up/domain/receiptValidation
 import { reflowBlockText } from '@up/domain/blockTextReceipt'
 import { computeBill } from '@up/domain/billMath'
 import type { ParsedAdjustment } from '@up/domain/receiptParser'
-import { runOcr, terminateOcrWorker, setModelBase, type OcrProgressHandler } from './ocrService'
+import { runOcr, terminateOcrWorker, setModelBase, lastOcrError, type OcrProgressHandler } from './ocrService'
 import { readAppReceipt, mergeScreens, type AppReceipt, type AppSource } from './appReceipt'
 
-export { terminateOcrWorker, setModelBase }
+export { terminateOcrWorker, setModelBase, lastOcrError }
 
 export interface ReceiptItem {
   name: string
@@ -137,8 +137,51 @@ export function readReceiptText(raw: string): { text: string; check: ReceiptChec
   return { text, ...analyzeText(text) }
 }
 
+/** Nhường một nhịp cho trình duyệt vẽ lại màn hình (tiến độ) trước bước tính toán nặng. */
+const tick = () => new Promise<void>((r) => setTimeout(r, 30))
+
 /**
- * Ảnh → (cắt/nắn nếu là bill giấy) → VietOCR → ghép dòng → phân tích → đối chiếu tổng.
+ * Thu nhỏ ảnh chụp lớn (iPhone 12–48 MP) về cạnh dài `maxEdge` bằng <img> + canvas.
+ * Ảnh <img> tự xoay theo EXIF trên mọi trình duyệt; tránh tuỳ chọn resize của createImageBitmap mà Safari bỏ qua.
+ */
+async function shrinkImage(file: Blob, maxEdge = 2800): Promise<Blob> {
+  const url = URL.createObjectURL(file)
+  try {
+    const img = new Image()
+    img.decoding = 'async'
+    img.src = url
+    await img.decode()
+    const w = img.naturalWidth
+    const h = img.naturalHeight
+    const long = Math.max(w, h)
+    if (!w || !h) throw new Error('ảnh rỗng')
+    if (long <= maxEdge && file.type !== 'image/heic' && file.type !== 'image/heif') return file
+    const scale = Math.min(1, maxEdge / long)
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round(w * scale)
+    canvas.height = Math.round(h * scale)
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('canvas 2D không khả dụng')
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.92))
+    canvas.width = canvas.height = 0
+    if (!blob) throw new Error('không mã hoá được ảnh')
+    return blob
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
+function stepError(step: string, err: unknown): Error & { code: string; detail: string } {
+  const e = new Error('Không mở được ảnh này. Thử chụp lại hoặc chọn ảnh khác.') as Error & { code: string; detail: string }
+  e.code = 'OCR_FAILED'
+  e.detail = `[${step}] ${err instanceof Error ? `${err.name}: ${err.message}` : String(err)}`
+  return e
+}
+
+/**
+ * Ảnh → thu nhỏ → (cắt/nắn nếu là bill giấy) → VietOCR → ghép dòng → phân tích → đối chiếu tổng.
  * `screenshot: true`: ảnh chụp màn hình app, không cắt; nhiều ảnh được ghép thành một đơn.
  */
 export async function scanReceipt(
@@ -146,16 +189,32 @@ export async function scanReceipt(
   options: { onProgress?: OcrProgressHandler; signal?: AbortSignal; screenshot?: boolean } = {},
 ): Promise<ScanResult> {
   const files = Array.isArray(input) ? input : [input]
+  const { onProgress } = options
   let cropped = false
-  let images: Blob[] = files
-  if (!options.screenshot) {
-    options.onProgress?.(0, 'Đang cắt và nắn ảnh…')
-    images = []
-    for (const f of files) {
-      const scanned = await scanReceiptImage(f).catch(() => null)
-      cropped ||= !!scanned?.cropped
-      images.push(scanned?.file ?? f)
+  const images: Blob[] = []
+  for (let i = 0; i < files.length; i++) {
+    const label = files.length > 1 ? ` ${i + 1}/${files.length}` : ''
+    onProgress?.(0, `Đang mở ảnh${label}…`)
+    await tick()
+    let img: Blob
+    try {
+      img = await shrinkImage(files[i])
+    } catch (err) {
+      throw stepError('mở ảnh', err)
     }
+    if (options.signal?.aborted) throw Object.assign(new Error('Đã huỷ'), { code: 'OCR_CANCELLED' })
+    if (!options.screenshot) {
+      onProgress?.(0, `Đang cắt và nắn ảnh${label}…`)
+      await tick()
+      const asFile = new File([img], files[i].name.replace(/\.[^.]+$/, '') + '.jpg', { type: img.type || 'image/jpeg' })
+      const scanned = await scanReceiptImage(asFile).catch((err) => {
+        console.warn('[ocr] cắt ảnh', err)
+        return null // không cắt được thì đọc nguyên ảnh
+      })
+      cropped ||= !!scanned?.cropped
+      img = scanned?.file ?? img
+    }
+    images.push(img)
   }
   const texts = await runOcr(images, options)
   const text = files.length > 1 ? mergeScreens(texts) : texts[0]

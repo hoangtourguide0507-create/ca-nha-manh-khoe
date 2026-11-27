@@ -11,6 +11,12 @@ Model: VietOCR vgg_seq2seq dạng ONNX (Apache-2.0, xem `ocr/vietocr/LICENSE-vie
 5. **Phân tích** (`domain/receipt/*`): chuẩn hoá số (đ/₫, O→0, l→1…), bỏ dấu để khớp từ khoá, đọc tên quán, ngày, món (1 dòng / 2 dòng / bảng STT GTGT), giảm giá, phí, VAT nhiều mức, tổng.
 6. **Đối chiếu** (`domain/receiptValidation`): món − giảm + phí + VAT phải = tổng bill, đúng từng đồng; lệch thì thử sửa (1↔4, bỏ dòng tổng bị đọc nhầm thành món…) → OK / CORRECTED / MISMATCH / UNVERIFIED.
 
+## Chỉnh cho điện thoại (v1.12)
+- `entry.ts`: thu nhỏ ảnh về cạnh dài 2800 px bằng `<img>` + canvas trước mọi bước (ảnh iPhone 12–48 MP; Safari bỏ qua tuỳ chọn resize của `createImageBitmap`), nhường nhịp vẽ giữa các bước.
+- `vietOcrWorker.ts` (bản chỉnh của worker chia-tien): tự tải WASM + 3 model có báo tiến độ MB, lưu Cache `sonha-ocr-v1`, nạp từng model một để giảm bộ nhớ đỉnh; lỗi kèm tên bước.
+- `ocrService.ts`: chuyển tiếp tiến độ tải/nạp, giữ chi tiết lỗi (`lastOcrError`).
+- `js/app.js`: hiện từng bước, tự dừng và báo lỗi nếu đứng yên quá 90 giây, màn lỗi có chi tiết kỹ thuật + Thử lại.
+
 ## Ảnh chụp màn hình app (`appReceipt.ts`, viết riêng cho Sổ Nhà)
 - Nhận diện nguồn theo từ khoá: đơn hàng (Shopee, Lazada, TikTok Shop, Tiki, ShopeeFood, Grab, be) hoặc biên lai (MoMo, ZaloPay, ShopeePay, VNPAY, ngân hàng). Không nhận ra thì dùng bộ đọc bill giấy.
 - Đơn hàng: tên món nhiều dòng + `Phân loại hàng` + `x2` + giá (giá gạch ngang bị bỏ), dạng `2x Món` của app đồ ăn, tiền hàng / phí ship / phí khác / voucher, giảm giá / tổng, mã đơn, ngày đặt, phương thức thanh toán.

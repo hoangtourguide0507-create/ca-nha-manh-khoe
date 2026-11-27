@@ -35,7 +35,7 @@ const common = {
 const out = join(root, 'js/ocr')
 mkdirSync(out, { recursive: true })
 await build({ ...common, entryPoints: [join(here, 'entry.ts')], outfile: join(out, 'ocr.js') })
-await build({ ...common, entryPoints: [join(src, 'workers/vietOcrWorker.ts')], outfile: join(out, 'ocr-worker.js') })
+await build({ ...common, entryPoints: [join(here, 'vietOcrWorker.ts')], outfile: join(out, 'ocr-worker.js') })
 
 const models = join(upstream, 'docs/ocr/vietocr')
 if (statSync(join(models, 'vietocr_encoder.onnx')).size < 1_000_000) throw new Error('encoder là con trỏ LFS, chưa phải model thật')

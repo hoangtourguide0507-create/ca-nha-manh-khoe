@@ -439,3 +439,4 @@ input, select { min-width: 0; max-width: 100%; }
 .tabbar .tab-scan .scan-circle svg { width: 28px; height: 28px; padding: 0; background: none; }
 .tabbar .tab-scan:active .scan-circle { transform: scale(0.9); }
 .items-box[hidden] { display: none; }
+.scan-err { text-align: left; white-space: pre-wrap; word-break: break-word; font-size: 12px; line-height: 1.45; background: var(--surface-2); color: var(--muted); border-radius: 12px; padding: 10px 12px; margin: 0; max-height: 180px; overflow: auto; user-select: text; -webkit-user-select: text; }
