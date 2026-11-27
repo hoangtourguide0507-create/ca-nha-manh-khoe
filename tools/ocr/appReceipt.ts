@@ -116,6 +116,18 @@ function moneyTokens(line: string, prefixCurrency: boolean): MoneyToken[] {
     }
     out.push({ values, negative: !!minus, sure: !!(pre || post || grouped), index: m.index ?? 0 })
   }
+  // chuỗi số không khớp dạng chuẩn (VD "489.3404" = 489.340đ, "899.0000609.000" = giá gạch + giá bán): tách bằng splitGlued
+  for (const g of line.matchAll(/[-–]?[đd₫]?\d[\d.,]*\d[đd₫]?/g)) {
+    const start = g.index ?? 0
+    const end = start + g[0].length
+    if (out.some((t) => t.index >= start - 2 && t.index < end)) continue
+    if (!/[.,]\d{3}/.test(g[0])) continue
+    const parts = splitGlued(g[0])
+    if (!parts) continue
+    const v = parts[parts.length - 1]
+    if (v >= 1000) out.push({ values: [v], negative: /^[-–]/.test(g[0]), sure: true, index: start })
+  }
+  out.sort((a, b) => a.index - b.index)
   return out
 }
 
@@ -196,7 +208,9 @@ function valueAfter(line: string, label: RegExp): string {
 // ---------------------------------------------------------------------------
 
 const PAYMENT_HINT = /(chuyen (tien|khoan)|thanh toan|giao dich|nap tien|rut tien) thanh cong|chi tiet giao dich|ma giao dich|so tham chieu|ma tham chieu|tai khoan nhan|nguoi nhan|ngan hang nhan/
-const ORDER_HINT = /ma don hang|thong tin don hang|chi tiet don hang|tong tien hang|phi van chuyen|phan loai|tong phu|tam tinh/
+const ORDER_HINT = /ma don hang|thong tin don hang|chi tiet don hang|tong tien hang|phi van chuyen|phan loai|tong phu|tam tinh|don hang da (hoan thanh|giao)|thong tin van chuyen|dia chi nhan hang|giao hang thanh cong|lien he shop|yeu cau tra hang/
+/** Dấu hiệu riêng giao diện Shopee */
+const SHOPEE_UI = /shopee|yeu thich\+?\s|sao chep|tra hang\/hoan tien|gui yeu cau tra hang|spx|lien he shop|\bmall\b|\bmal\b/
 
 export function detectSource(text: string): { source: AppSource; name: string; kind: AppKind } | null {
   const f = fold(text)
@@ -213,7 +227,9 @@ export function detectSource(text: string): { source: AppSource; name: string; k
     const bank = BANKS.find(([re]) => re.test(f))
     return { source: 'bank', name: bank ? `Chuyển khoản (${bank[1]})` : 'Chuyển khoản', kind: 'payment' }
   }
-  if (orderish && /ma don hang/.test(f) && /x\s?\d|so luong|sl:/.test(f)) return { source: 'shopee', name: 'Đơn online', kind: 'order' }
+  if (orderish && (/thong tin don hang|don hang da|dia chi nhan hang|thong tin van chuyen/.test(f) || (/ma don hang/.test(f) && /x\s?\d|so luong|sl:/.test(f)))) {
+    return SHOPEE_UI.test(f) ? { source: 'shopee', name: 'Shopee', kind: 'order' } : { source: 'shopee', name: 'Đơn online', kind: 'order' }
+  }
   return null
 }
 
@@ -232,9 +248,9 @@ const L_METHOD = /phuong thuc thanh toan|hinh thuc thanh toan|thanh toan bang/
 const QTY_SUFFIX = /(?:^|\s)[xX×]\s?(\d{1,3})\b|(?:so luong|sl)\s*:?\s*(\d{1,3})\b/
 const QTY_PREFIX = /^(\d{1,2})\s?[xX×]\s+(.+)$/
 /** Dòng tên shop: huy hiệu Shopee/Lazada đứng đầu, hoặc tên có Store/Shop/Official/Mall. */
-const SHOP_LINE = /^(yeu thich\+?|mall|lazmall|choice|preferred|shopee mall)\s+\S|\b(official|store|flagship)\b|\bshop\s*$/
+const SHOP_LINE = /^(yeu thich\+?|mall|mal|mail|maii|mali|lazmall|choice|preferred|shopee mall)\s+\S|\b(official|store|flagship)\b|\bshop\s*$/
 const NOT_NAME =
-  /^(\d{1,2}:\d{2}|9:41)|don hang|da hoan thanh|^(da|dang|cho) (giao|nhan|huy|xac nhan|xu ly|lay hang)|giao hang thanh cong|cam on|dia chi|nhan hang|thong tin|van chuyen|xem shop|chat|lien he|tro giup|mua lai|danh gia|doi tra|tra hang|hoan tien|yeu cau|xem chi tiet|\(\+?84\)|^\+?84|\b0\d{9}\b|\d{3} \d{3} \d{3}|phuong |quan |huyen |tp\.|thanh pho|tinh |ward|district/
+  /\blive\b|xem ngay|san sale|flash ?sale|livestream|mien phi van chuyen|freeship|giam them|ma giam gia cua shop|^(\d{1,2}:\d{2}|9:41)|don hang|da hoan thanh|^(da|dang|cho) (giao|nhan|huy|xac nhan|xu ly|lay hang)|giao hang thanh cong|cam on|dia chi|nhan hang|thong tin|van chuyen|xem shop|chat|lien he|tro giup|mua lai|danh gia|doi tra|tra hang|hoan tien|yeu cau|xem chi tiet|\(\+?84\)|^\+?84|\b0\d{9}\b|\d{3} \d{3} \d{3}|phuong |quan |huyen |tp\.|thanh pho|tinh |ward|district/
 
 interface RawItem {
   name: string
@@ -255,7 +271,7 @@ function gluedToken(line: string, prefix: boolean): MoneyToken | null {
 
 function cleanName(s: string): string {
   return s
-    .replace(/^\s*(mall|lazmall|yêu thích\+?|yeu thich\+?|choice|preferred)\s+/i, '')
+    .replace(/^\s*(mall|mal|mail|maii|mali|lazmall|yêu thích\+?|yeu thich\+?|choice|preferred)\s+/i, '')
     .replace(/\s{2,}/g, ' ')
     .trim()
 }
@@ -366,6 +382,14 @@ function parseOrder(lines: string[], src: { source: AppSource; name: string }): 
       if (!tk) tk = pending
       if (tk && nameBuf.length) {
         const base = cleanName(nameBuf.join(' ').replace(MONEY_RE, ' '))
+        if (variant) {
+          // "CUKTECH CP24 Xám 1 Cáp" khi tên là "CUKTECH CP24 Sạc…": chữ in trên ảnh sản phẩm dính vào biến thể
+          const bw = base.split(/\s+/)
+          const vw = variant.split(/\s+/)
+          let k = 0
+          while (k < vw.length - 1 && k < bw.length && fold(vw[k]) === fold(bw[k])) k++
+          variant = vw.slice(k).join(' ')
+        }
         items.push({ name: variant ? `${base} (${variant})` : base, qty, money: tk, lineTotal: false, line: i })
       }
       nameBuf = []

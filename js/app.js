@@ -13,7 +13,7 @@ const CATS = [
   { id: 'spirit', name: 'Cúng giỗ', icon: '🪔' },
   { id: 'other', name: 'Khác', icon: '📌' },
 ];
-const APP_VERSION = 'v1.16';
+const APP_VERSION = 'v1.17';
 
 const EXP_CATS = [
   { id: 'grocery', name: 'Đi chợ & siêu thị', icon: '🛒' },
@@ -1471,7 +1471,7 @@ async function runScan(files, screenshot = false) {
     scanAbort = null;
     localStorage.setItem('sonha:ocrReady', '1');
     clearPending();
-    expenseForm(scanToExpense(r.summary), r.summary);
+    expenseForm(scanToExpense(r.summary), { ...r.summary, rawText: r.text });
   } catch (err) {
     clearInterval(watchdog);
     if (ctrl.signal.aborted && !stalled) return; // người dùng bấm Hủy
@@ -1658,6 +1658,10 @@ function scanNote(s) {
   const ok = s.kind === 'payment' ? !!s.total : good && n;
   return `<div class="scan-note ${ok ? 'ok' : 'warn'}"><b>${msg}</b>${
     s.notes.length ? `<details><summary>Chi tiết đối chiếu</summary>${s.notes.map((x) => `<div>${esc(x)}</div>`).join('')}</details>` : ''
+  }${
+    s.rawText
+      ? `<details><summary>Chữ đọc được từ ảnh</summary><div class="hint">Nếu app đọc sai, chụp màn hình phần này gửi lại để sửa · Sổ Nhà ${esc(APP_VERSION)}</div><pre class="scan-err">${esc(s.rawText)}</pre></details>`
+      : ''
   }</div>`;
 }
 
