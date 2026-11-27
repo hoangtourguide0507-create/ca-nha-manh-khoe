@@ -9,7 +9,9 @@ Web app nhắc việc nhà cho hai vợ chồng. Dữ liệu đồng bộ giữa
   - *Một lần*: ví dụ hết bảo hành, lịch hẹn.
 - **Hôm nay**: hiện việc quá hạn, việc đến hạn hôm nay và việc trong 7 ngày tới. Bấm ✓ là xong, có nút hoàn tác.
 - **Chi phí & nơi mua**: việc bật *Ghi chi phí* sẽ hỏi giá và nơi mua mỗi lần xong (Shopee, Lazada, TikTok Shop, cửa hàng, Zalo người bán), gõ tắt được như `850k` hay `1tr2`. Trang chi tiết hiện giá lần trước, giá rẻ nhất, tổng năm, biểu đồ các kỳ và nút **Mua lại** (mở link Shopee, nhắn Zalo người bán, gọi hoặc chỉ đường tới cửa hàng).
-- **Chi lớn**: ghi số tiền, ngày giờ, nhóm, cách thanh toán, người chi. Có tổng theo năm và theo nhóm. Từ một khoản chi có thể *tạo nhắc kèm* như bảo hiểm hay hết bảo hành.
+- **Quét hóa đơn** (tab *Chi tiêu* → 📷): chụp bill siêu thị, app tự đọc tên quán, ngày mua, từng món (số lượng, đơn giá, thành tiền), giảm giá và tổng tiền rồi điền sẵn vào khoản chi để xem lại trước khi lưu. Đọc chữ ngay trên máy, ảnh không gửi đi đâu. Lần đầu tải bộ đọc chữ khoảng 110 MB.
+- **Giá từng món** (tab *Chi tiêu* → 🏷️): tra giá mỗi món qua các lần mua, giá gần nhất, ▲▼ so với lần trước, thấp nhất/cao nhất và nơi mua.
+- **Khoản chi**: ghi số tiền, ngày giờ, nhóm, cách thanh toán, người chi. Có tổng theo năm và theo nhóm. Từ một khoản chi có thể *tạo nhắc kèm* như bảo hiểm hay hết bảo hành.
 - **Chi phí định kỳ**: tab *Chi tiêu* gom tiền các việc có ghi chi phí (điện nước, lõi lọc, tẩy giun…) theo năm, theo nhóm, từng việc và theo người/thú cưng. Thẻ của mỗi người (VD Thúi) hiện tổng chi năm nay.
 - **Nhắc đặt hàng sớm**: việc mua online đặt *Nhắc đặt hàng trước N ngày* → mục 🛒 *Cần đặt hàng* ở màn Hôm nay và thông báo đẩy, có nút mở Shopee/Zalo và nút *Đã đặt*.
 - **So giá**: khi nhập số tiền, đắt hơn lần trước từ 20% thì cảnh báo kèm giá rẻ nhất từng mua và nơi mua; lịch sử hiện ▲▼ % từng lần.
@@ -36,6 +38,8 @@ worker/worker.js                                              ← máy chủ (Cl
 | `js/lunar.js` | Đổi ngày dương sang âm lịch Việt Nam (UTC+7), tìm ngày âm kế tiếp |
 | `js/store.js` | Lưu trên máy và đồng bộ. Địa chỉ Worker mặc định nằm ở `DEFAULT_API` |
 | `js/push.js` | Bật hoặc tắt thông báo |
+| `js/ocr/` | Bộ đọc hóa đơn đã đóng gói (dựng từ `tools/ocr/`, mã gốc [sakutara/chia-tien](https://github.com/sakutara/chia-tien), MIT) |
+| `ocr/vietocr/` | Model VietOCR ONNX + thư viện WASM (Apache-2.0), tải khi quét lần đầu |
 | `sw.js` | Chạy offline, nhận thông báo |
 | `worker/worker.js` | API đồng bộ, gửi Web Push, lịch nhắc mỗi giờ |
 | `.github/workflows/deploy-worker.yml` | Tự deploy Worker lên Cloudflare khi `worker/` đổi |

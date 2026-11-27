@@ -1,6 +1,6 @@
 // Service worker: chạy offline + nhận thông báo đẩy.
 // Khi sửa file giao diện, tăng số phiên bản để máy tải bản mới.
-const CACHE = 'sonha-v10';
+const CACHE = 'sonha-v11';
 const ASSETS = [
   './',
   'index.html',
@@ -24,15 +24,34 @@ self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== OCR_CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
+
+// Model OCR (~100 MB) nằm trong cache riêng, không bị xoá khi đổi phiên bản app.
+// Lấy từ cache trước; chỉ tải lại khi đổi OCR_CACHE.
+const OCR_CACHE = 'sonha-ocr-v1';
 
 // Ưu tiên mạng (luôn có bản mới), mất mạng thì dùng bản đã lưu.
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
+  if (url.pathname.includes('/ocr/vietocr/')) {
+    e.respondWith(
+      caches.open(OCR_CACHE).then((c) =>
+        c.match(e.request).then(
+          (hit) =>
+            hit ||
+            fetch(e.request).then((res) => {
+              if (res.ok) c.put(e.request, res.clone());
+              return res;
+            })
+        )
+      )
+    );
+    return;
+  }
   e.respondWith(
     fetch(e.request)
       .then((res) => {

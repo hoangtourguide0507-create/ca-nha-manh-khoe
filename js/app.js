@@ -14,6 +14,7 @@ const CATS = [
   { id: 'other', name: 'Khác', icon: '📌' },
 ];
 const EXP_CATS = [
+  { id: 'grocery', name: 'Đi chợ & siêu thị', icon: '🛒' },
   { id: 'car', name: 'Xe cộ', icon: '🚗' },
   { id: 'luxury', name: 'Đồ hiệu', icon: '👜' },
   { id: 'tech', name: 'Điện máy', icon: '📱' },
@@ -455,7 +456,7 @@ function viewExpenses() {
       <span>Năm ${expYear}</span>
       <button class="icon-btn" data-act="year" data-y="${years[idx + 1] ?? ''}" ${idx < years.length - 1 ? '' : 'disabled'}>›</button>
     </div>
-    <div class="card-head"><b>👜 Khoản chi lớn</b><span>${list.length} khoản</span></div>
+    <div class="card-head"><b>👜 Khoản chi</b><span>${list.length} khoản</span></div>
     <div class="sum">${money(total) || '0 đ'}</div>
     ${byCat
       .map(
@@ -464,6 +465,10 @@ function viewExpenses() {
       .join('')}
   </div>
   ${periodicCard}
+  <div class="scan-row">
+    <button class="btn primary" data-act="scanReceipt">📷 Quét hóa đơn</button>
+    <button class="btn" data-act="priceBook">🏷️ Giá từng món</button>
+  </div>
   <button class="btn dir-btn" data-act="shopDir">📒 Danh bạ nơi mua</button>
   ${Object.entries(months)
     .map(
@@ -472,13 +477,13 @@ function viewExpenses() {
         .map(
           (e) => `<div class="card task" data-act="editExpense" data-id="${e.id}">
           <div class="ico" data-cat="${esc(e.category || 'other')}">${catOf(e.category, EXP_CATS).icon}</div>
-          <div class="body"><div class="title">${esc(e.title)}</div><div class="meta"><span>${fmtDateTime(e.at)}</span>${e.method ? `<span>${esc(e.method)}</span>` : ''}<span>${esc(who(e.by))}</span></div></div>
+          <div class="body"><div class="title">${esc(e.title)}</div><div class="meta"><span>${fmtDateTime(e.at)}</span>${e.items?.length ? `<span>🧾 ${e.items.length} món</span>` : ''}${e.method ? `<span>${esc(e.method)}</span>` : ''}<span>${esc(who(e.by))}</span></div></div>
           <div class="amount">${money(e.amount)}</div></div>`
         )
         .join('')}</section>`
     )
     .join('')}
-  ${!list.length ? `<div class="empty"><div class="big">👜</div><div>Chưa có khoản chi lớn nào trong năm ${expYear}.</div></div>` : ''}`;
+  ${!list.length ? `<div class="empty"><div class="big">👜</div><div>Chưa có khoản chi nào trong năm ${expYear}.</div><div class="hint">Bấm “📷 Quét hóa đơn” để ghi nhanh một lần đi siêu thị.</div></div>` : ''}`;
 }
 
 function viewSettings() {
@@ -549,7 +554,7 @@ function viewSettings() {
     <label class="btn file">Nhập từ file sao lưu<input type="file" accept="application/json,.json" data-act-change="import" hidden></label>
     <button class="btn ghost" data-act="resync">Tải lại toàn bộ từ máy chủ</button>
   </div></section>
-  <p class="foot">Sổ Nhà · v1.8 · 🧡</p>`;
+  <p class="foot">Sổ Nhà · v1.9 · 🧡</p>`;
 }
 
 const views = { today: viewToday, tasks: viewTasks, expenses: viewExpenses, settings: viewSettings };
@@ -636,6 +641,10 @@ function openSheet(html, refresh = null) {
   requestAnimationFrame(() => sheet.classList.add('open'));
 }
 function closeSheet() {
+  if (scanAbort) {
+    scanAbort.abort();
+    scanAbort = null;
+  }
   const sheet = $('#sheet');
   sheet.classList.remove('open');
   sheetRefresh = null;
@@ -1221,29 +1230,40 @@ function saveShop(form) {
 }
 
 // ---------- Form chi tiêu ----------
-function expenseForm(e = {}) {
+function expenseForm(e = {}, scan = null) {
   const isNew = !e.id;
   const m = members();
   const by = e.by ?? me() ?? 'all';
+  const items = e.items || [];
+  const showItems = items.length > 0 || e.category === 'grocery';
   openSheet(`
-  <form class="form" data-form="expense" data-id="${e.id || ''}">
-    <h3>${isNew ? 'Ghi khoản chi lớn' : 'Sửa khoản chi'}</h3>
-    <label>Khoản chi<input name="title" required value="${esc(e.title || '')}" placeholder="VD: Mua xe SH, túi LV Neverfull…"></label>
+  <form class="form" data-form="expense" data-id="${e.id || ''}" data-discount="${scan?.discount || 0}">
+    <h3>${isNew ? (scan ? 'Kiểm tra hóa đơn' : 'Ghi khoản chi') : 'Sửa khoản chi'}</h3>
+    ${scan ? scanNote(scan) : isNew ? `<button type="button" class="btn scan-btn" data-act="scanReceipt">📷 Quét hóa đơn để điền tự động</button>` : ''}
+    <label>Khoản chi<input name="title" required value="${esc(e.title || '')}" placeholder="VD: Đi Co.opmart, mua xe SH…"></label>
     <div class="row2">
-      <label>Số tiền<input name="amount" inputmode="decimal" required value="${e.amount ? new Intl.NumberFormat('vi-VN').format(e.amount) : ''}" placeholder="VD: 95tr, 1tỷ2"></label>
+      <label>Số tiền<input name="amount" inputmode="decimal" value="${e.amount ? new Intl.NumberFormat('vi-VN').format(e.amount) : ''}" placeholder="VD: 579k, 95tr"></label>
       <label>Thời điểm<input name="at" type="datetime-local" value="${e.at || nowLocal()}"></label>
     </div>
     <div class="row2">
       <label>Nhóm<select name="category">${EXP_CATS.map((c) => `<option value="${c.id}" ${c.id === e.category ? 'selected' : ''}>${c.icon} ${c.name}</option>`).join('')}</select></label>
       <label>Thanh toán<select name="method">${METHODS.map((x) => `<option ${x === e.method ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
     </div>
+    <label>Nơi mua<input name="shop" list="expShopList" value="${esc(e.shop || '')}" placeholder="VD: Co.opmart Phú Thạnh, chợ Tân Hương" autocomplete="off"></label>
+    <datalist id="expShopList">${expenseShops().map((x) => `<option value="${esc(x)}"></option>`).join('')}</datalist>
+    <div class="items-box" ${showItems ? '' : 'hidden'}>
+      <div class="items-head"><b>🧾 Từng món</b><span class="hint" data-items-sum></span></div>
+      <div class="item-rows">${items.map(itemRow).join('')}</div>
+      <button type="button" class="btn ghost small" data-act="addItemRow">＋ Thêm món</button>
+    </div>
+    ${showItems ? '' : `<button type="button" class="btn ghost" data-act="showItems">🧾 Ghi từng món (đơn giá, số lượng)</button>`}
     <div class="label">Người chi</div>
     <div class="seg" data-seg="by">
       ${m.map((n, i) => `<button type="button" data-v="${i}" class="${String(by) === String(i) ? 'on' : ''}">${esc(n)}</button>`).join('')}
       <button type="button" data-v="all" class="${by === 'all' ? 'on' : ''}">Chung</button>
     </div>
     <input type="hidden" name="by" value="${by}">
-    <label>Ghi chú<textarea name="note" rows="2" placeholder="Nơi mua, số hóa đơn, thời hạn bảo hành…">${esc(e.note || '')}</textarea></label>
+    <label>Ghi chú<textarea name="note" rows="2" placeholder="Số hóa đơn, thời hạn bảo hành…">${esc(e.note || '')}</textarea></label>
     <div class="actions">
       <button type="button" class="btn" data-act="closeSheet">Hủy</button>
       <button type="submit" class="btn primary">${isNew ? 'Lưu' : 'Lưu thay đổi'}</button>
@@ -1255,13 +1275,16 @@ function expenseForm(e = {}) {
            <button type="button" class="btn danger ghost" data-act="delExpense" data-id="${e.id}">Xóa khoản chi</button>`
     }
   </form>`);
+  updateItemsSum($('#sheet form[data-form=expense]'));
 }
 
 function saveExpense(form) {
   const f = Object.fromEntries(new FormData(form));
-  const amount = parseMoney(f.amount);
+  const items = readItems(form);
+  const itemsSum = items.reduce((s, x) => s + x.amount, 0);
+  const amount = f.amount.trim() ? parseMoney(f.amount) : itemsSum || null;
   if (!f.title.trim()) return toast('Nhập tên khoản chi');
-  if (!amount) return toast('Số tiền chưa đúng (VD: 95tr, 1.250.000)');
+  if (!amount) return toast('Số tiền chưa đúng (VD: 579k, 1.250.000)');
   const old = form.dataset.id ? S.get('expense', form.dataset.id) : null;
   const e = S.put('expense', {
     ...(old || {}),
@@ -1271,12 +1294,222 @@ function saveExpense(form) {
     category: f.category,
     method: f.method,
     by: f.by === 'all' ? 'all' : Number(f.by),
+    shop: (f.shop || '').trim(),
+    items: items.length ? items : null,
     note: f.note.trim(),
   });
   expYear = Number(e.at.slice(0, 4));
   closeSheet();
   if (old) toast('Đã lưu');
+  else if (items.length) toast(`Đã ghi ${money(amount)} · ${items.length} món`, 'Xem giá', () => priceBook());
   else toast(`Đã ghi ${money(amount)}`, 'Tạo nhắc kèm', () => followUp(e));
+}
+
+// ---------- Từng món trong khoản chi ----------
+const fmtNum = (n) => (n == null || n === '' ? '' : new Intl.NumberFormat('vi-VN').format(Math.round(n)));
+const fmtQty = (q) => String(q ?? 1).replace('.', ',');
+const parseQty = (s) => {
+  const n = parseFloat(String(s || '').replace(',', '.'));
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
+
+function itemRow(i = {}) {
+  return `<div class="item-row${i.check ? ' check' : ''}">
+    <input name="iName" value="${esc(i.name || '')}" placeholder="Tên món" autocomplete="off">
+    <div class="item-nums">
+      <label>SL<input name="iQty" inputmode="decimal" value="${esc(fmtQty(i.qty))}" autocomplete="off"></label>
+      <label>Đơn giá<input name="iPrice" inputmode="decimal" value="${fmtNum(i.price)}" autocomplete="off"></label>
+      <label>Thành tiền<input name="iAmt" inputmode="decimal" value="${fmtNum(i.amount)}" autocomplete="off"></label>
+      <button type="button" class="icon-btn small del" data-act="delItemRow" aria-label="Xóa món">×</button>
+    </div>
+  </div>`;
+}
+
+function readItems(form) {
+  return [...form.querySelectorAll('.item-row')]
+    .map((r) => {
+      const v = (n) => r.querySelector(`[name=${n}]`).value;
+      const name = v('iName').trim();
+      const qty = parseQty(v('iQty')) || 1;
+      const price = parseMoney(v('iPrice'));
+      const amount = parseMoney(v('iAmt')) ?? (price != null ? Math.round(price * qty) : null);
+      if (!name || !amount) return null;
+      return { name, qty, price: price ?? Math.round(amount / qty), amount };
+    })
+    .filter(Boolean);
+}
+
+function updateItemsSum(form) {
+  const el = form?.querySelector('[data-items-sum]');
+  if (!el) return;
+  const items = readItems(form);
+  const sum = items.reduce((s, x) => s + x.amount, 0);
+  const amount = parseMoney(form.elements.amount.value);
+  const discount = Number(form.dataset.discount) || 0;
+  const gap = amount && sum ? amount - sum : 0;
+  el.classList.toggle('warn', !!gap && gap !== -discount);
+  el.textContent = !items.length
+    ? ''
+    : `${items.length} món · ${money(sum)}${gap ? (gap === -discount ? ` · giảm ${money(discount)}` : ` · lệch ${money(Math.abs(gap))} so với Số tiền`) : ''}`;
+}
+
+// sửa SL hoặc đơn giá → tự tính thành tiền
+function onItemInput(input) {
+  const row = input.closest('.item-row');
+  if (row && (input.name === 'iQty' || input.name === 'iPrice')) {
+    const qty = parseQty(row.querySelector('[name=iQty]').value) || 1;
+    const price = parseMoney(row.querySelector('[name=iPrice]').value);
+    if (price != null) row.querySelector('[name=iAmt]').value = fmtNum(price * qty);
+  }
+  row?.classList.remove('check');
+  updateItemsSum(input.form);
+}
+
+/** Tên nơi mua đã dùng ở các khoản chi trước + danh bạ nơi mua. */
+function expenseShops() {
+  const m = new Map();
+  for (const e of S.all('expense')) if (e.shop) m.set(norm(e.shop), e.shop);
+  for (const x of knownShops()) if (x.name) m.set(norm(x.name), x.name);
+  return [...m.values()].sort((a, b) => a.localeCompare(b, 'vi'));
+}
+
+// ---------- Quét hóa đơn (đọc chữ ngay trên máy; mã từ sakutara/chia-tien, xem tools/ocr) ----------
+let scanAbort = null;
+
+function startScan() {
+  if (!localStorage.getItem('sonha:ocrReady') && !confirm('Lần đầu quét cần tải bộ đọc chữ khoảng 110 MB (nên dùng Wi-Fi). Từ lần sau quét nhanh hơn và không cần mạng. Tiếp tục?')) return;
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = () => input.files[0] && runScan(input.files[0]);
+  input.click();
+}
+
+async function runScan(file) {
+  const ctrl = new AbortController();
+  openSheet(`<div class="detail scan-sheet">
+    <h3>📷 Đang đọc hóa đơn</h3>
+    <div class="scan-prog"><i></i></div>
+    <div class="hint" data-scan-stage>Đang mở ảnh…</div>
+    <div class="hint">${localStorage.getItem('sonha:ocrReady') ? 'Thường mất 10–40 giây.' : 'Lần đầu phải tải bộ đọc chữ nên có thể mất 1–3 phút.'} Ảnh chỉ xử lý trên máy này, không gửi đi đâu.</div>
+    <button class="btn" data-act="closeSheet">Hủy quét</button>
+  </div>`);
+  scanAbort = ctrl;
+  try {
+    const { scanReceipt } = await import('./ocr/ocr.js');
+    const r = await scanReceipt(file, {
+      signal: ctrl.signal,
+      onProgress: (p, stage) => {
+        const bar = $('#sheet .scan-prog i');
+        if (bar) bar.style.width = `${p}%`;
+        const st = $('#sheet [data-scan-stage]');
+        if (st) st.textContent = `${stage.replace(/…$/, '')} · ${p}%`;
+      },
+    });
+    if (ctrl.signal.aborted) return;
+    scanAbort = null;
+    localStorage.setItem('sonha:ocrReady', '1');
+    expenseForm(scanToExpense(r.summary), r.summary);
+  } catch (err) {
+    if (ctrl.signal.aborted || err?.code === 'OCR_CANCELLED') return;
+    scanAbort = null;
+    closeSheet();
+    toast(err?.code ? err.message : 'Không quét được ảnh. Kiểm tra mạng rồi thử lại.', 'Nhập tay', () => expenseForm({ category: 'grocery' }));
+  }
+}
+
+const titleCase = (s) =>
+  s === s.toLocaleUpperCase('vi') ? s.toLocaleLowerCase('vi').replace(/(^|\s)(\S)/g, (_, a, b) => a + b.toLocaleUpperCase('vi')) : s;
+
+function scanToExpense(s) {
+  const shop = s.vendor ? titleCase(s.vendor.trim()) : '';
+  return {
+    title: shop || 'Đi siêu thị',
+    shop,
+    amount: s.total,
+    at: s.date ? `${s.date}T${nowLocal().slice(11)}` : nowLocal(),
+    category: 'grocery',
+    method: 'Thẻ',
+    items: s.items.map((i) => ({ name: i.name, qty: i.quantity, price: i.unitPrice, amount: i.amount, check: i.check })),
+  };
+}
+
+function scanNote(s) {
+  const good = s.status === 'OK' || s.status === 'CORRECTED';
+  const msg = !s.items.length
+    ? '⚠️ Chưa đọc được món nào — nhập tay hoặc chụp lại rõ hơn.'
+    : {
+        OK: `✓ Đọc được ${s.items.length} món, tổng khớp hóa đơn. Xem lại rồi bấm Lưu.`,
+        CORRECTED: `✓ Đọc được ${s.items.length} món, đã tự sửa vài số cho khớp tổng — xem lại dòng tô vàng.`,
+        MISMATCH: `⚠️ Đọc được ${s.items.length} món nhưng tổng chưa khớp hóa đơn — so với ảnh và sửa dòng tô vàng.`,
+        UNVERIFIED: `ℹ️ Đọc được ${s.items.length} món. Hóa đơn không có dòng tổng để đối chiếu — kiểm tra lại Số tiền.`,
+      }[s.status];
+  return `<div class="scan-note ${good && s.items.length ? 'ok' : 'warn'}"><b>${msg}</b>${
+    s.notes.length ? `<details><summary>Chi tiết đối chiếu</summary>${s.notes.map((n) => `<div>${esc(n)}</div>`).join('')}</details>` : ''
+  }</div>`;
+}
+
+// ---------- Giá từng món: tra giá qua các lần mua ----------
+const fold = (s) =>
+  String(s || '')
+    .replace(/[đĐ]/g, 'd')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+
+function priceIndex() {
+  const groups = new Map();
+  for (const e of S.all('expense')) {
+    for (const it of e.items || []) {
+      const key = fold(it.name);
+      if (!key || !it.price) continue;
+      if (!groups.has(key)) groups.set(key, { key, buys: [] });
+      groups.get(key).buys.push({ name: it.name, day: (e.at || '').slice(0, 10), price: it.price, qty: it.qty, shop: e.shop || e.title, expId: e.id });
+    }
+  }
+  return [...groups.values()]
+    .map((g) => {
+      g.buys.sort((a, b) => b.day.localeCompare(a.day));
+      const prices = g.buys.map((b) => b.price);
+      return { ...g, name: g.buys[0].name, last: g.buys[0], prev: g.buys[1], min: Math.min(...prices), max: Math.max(...prices) };
+    })
+    .sort((a, b) => b.last.day.localeCompare(a.last.day) || a.name.localeCompare(b.name, 'vi'));
+}
+
+const dayLabel = (d) => (d ? `${D.short(d)}/${d.slice(0, 4)}` : '');
+
+function priceRows(q = '') {
+  const k = fold(q);
+  const list = priceIndex().filter((g) => !k || g.key.includes(k));
+  if (!list.length) {
+    return `<div class="hint">${k ? 'Không thấy món nào khớp.' : 'Chưa có món nào. Quét hóa đơn hoặc ghi từng món trong khoản chi, giá sẽ hiện ở đây.'}</div>`;
+  }
+  return list
+    .map(
+      (g) => `<details class="price-item">
+      <summary>
+        <div class="body"><div class="title">${esc(g.name)}</div><div class="meta"><span>${dayLabel(g.last.day)}</span><span>${esc(g.last.shop)}</span>${g.buys.length > 1 ? `<span>${g.buys.length} lần</span>` : ''}</div></div>
+        <div class="amount">${money(g.last.price)}${g.prev ? chgBadge(pctChange(g.last.price, g.prev.price)) : ''}</div>
+      </summary>
+      ${g.buys.length > 1 ? `<div class="hint">Thấp nhất ${money(g.min)} · cao nhất ${money(g.max)}</div>` : ''}
+      ${g.buys
+        .map(
+          (b) => `<div class="price-hist" data-act="editExpense" data-id="${esc(b.expId)}"><span>${dayLabel(b.day)}</span><span class="shop">${esc(b.shop)}</span><b>${b.qty && b.qty !== 1 ? `${esc(fmtQty(b.qty))} × ` : ''}${money(b.price)}</b></div>`
+        )
+        .join('')}
+    </details>`
+    )
+    .join('');
+}
+
+function priceBook() {
+  openSheet(`<div class="detail price-book">
+    <h3>🏷️ Giá từng món</h3>
+    <input name="priceQ" type="search" placeholder="Tìm món: sữa, gạo, cát mèo…" autocomplete="off">
+    <div class="price-list">${priceRows()}</div>
+  </div>`);
 }
 
 function followUp(e) {
@@ -1337,6 +1570,24 @@ const actions = {
     closeSheet();
   },
   followUp: (d) => followUp(S.get('expense', d.id)),
+  scanReceipt: () => startScan(),
+  priceBook: () => priceBook(),
+  addItemRow: (d, el) => {
+    const box = el.closest('.items-box');
+    box.querySelector('.item-rows').insertAdjacentHTML('beforeend', itemRow());
+    box.querySelector('.item-row:last-child [name=iName]').focus();
+  },
+  delItemRow: (d, el) => {
+    const form = el.closest('form');
+    el.closest('.item-row').remove();
+    updateItemsSum(form);
+  },
+  showItems: (d, el) => {
+    const box = el.closest('form').querySelector('.items-box');
+    box.hidden = false;
+    el.remove();
+    if (!box.querySelector('.item-row')) actions.addItemRow(d, box.querySelector('[data-act=addItemRow]'));
+  },
   fab: () => (tab === 'expenses' ? expenseForm() : taskForm({}, tab === 'tasks' && subjFilter ? { subjects: [subjFilter] } : null)),
   subj: (d) => {
     subjFilter = subjFilter === d.id ? null : d.id;
@@ -1503,6 +1754,9 @@ document.addEventListener('input', (e) => {
   if (e.target.matches('[name=lunarDays], [name=lunarDay], [name=lunarMonth]')) updateLunarPreview(e.target.form);
   if (e.target.matches('form[data-form=task] [name=title]')) autoPickSubj(e.target.form);
   if (e.target.matches('form[data-form=done] [name=amount]')) updatePriceHint(e.target.form);
+  if (e.target.matches('.item-row input')) onItemInput(e.target);
+  if (e.target.matches('form[data-form=expense] [name=amount]')) updateItemsSum(e.target.form);
+  if (e.target.matches('[name=priceQ]')) $('#sheet .price-list').innerHTML = priceRows(e.target.value);
   // chọn tên shop đã dùng → điền sẵn loại và link
   if (e.target.matches('[name=buyName]')) {
     const form = e.target.form;
@@ -1519,6 +1773,13 @@ document.addEventListener('input', (e) => {
 
 // Enter trong ô thêm nhanh tên → thêm tên, không gửi cả form việc
 document.addEventListener('keydown', (e) => {
+  // Enter trong ô món → sang ô kế tiếp, không lưu vội
+  if (e.key === 'Enter' && e.target.matches('.item-row input')) {
+    e.preventDefault();
+    const inputs = [...e.target.form.querySelectorAll('.item-row input')];
+    inputs[inputs.indexOf(e.target) + 1]?.focus();
+    return;
+  }
   if (e.key === 'Enter' && e.target.matches('[name=newSubjName], [name=newSubjIcon]')) {
     e.preventDefault();
     actions.saveSubjInline({}, e.target);
@@ -1527,6 +1788,10 @@ document.addEventListener('keydown', (e) => {
 
 document.addEventListener('change', async (e) => {
   if (e.target.matches('form[data-form=task] [name=trackAmount]')) e.target.form.dataset.cost = e.target.checked ? '1' : '0';
+  if (e.target.matches('form[data-form=expense] [name=category]') && e.target.value === 'grocery') {
+    const btn = e.target.form.querySelector('[data-act=showItems]');
+    if (btn) actions.showItems({}, btn);
+  }
   if (e.target.dataset.actChange === 'import') {
     const file = e.target.files[0];
     if (!file) return;
