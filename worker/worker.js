@@ -223,7 +223,7 @@ async function runReminders(env, { force = false } = {}) {
         ? one.order
           ? { title: `🛒 Đặt hàng: ${one.t.buyItem || one.t.title}`, body: `Cần cho “${one.t.title}” ${dueText(one.t, day)}${shopText(one.t.buy) ? ' · ' + shopText(one.t.buy) : ''}. Mở app để mua lại.` }
           : { title: `${one.t.icon || '🔔'} ${one.t.title}`, body: `Đến hạn ${dueText(one.t, day)}${one.t.note ? ' · ' + one.t.note : ''}` }
-        : { title: `Sổ Nhà · ${mine.length} việc cần làm`, body: mine.map(line).join('\n') };
+        : { title: `Home · ${mine.length} việc cần làm`, body: mine.map(line).join('\n') };
     if (await deliver(env, s, { ...payload, tag: `sonha-${day}-${hour}`, url: './', badge })) sent++;
   }
 
@@ -239,7 +239,7 @@ async function testPush(env, { user }) {
   const targets = user === null || user === undefined ? subs : subs.filter((s) => String(s.user) === String(user));
   let sent = 0;
   for (const s of targets) {
-    if (await deliver(env, s, { title: '🔔 Sổ Nhà', body: 'Thông báo thử — máy này đã sẵn sàng nhận nhắc việc.', tag: 'sonha-test', url: './' })) sent++;
+    if (await deliver(env, s, { title: '🔔 Home', body: 'Thông báo thử — máy này đã sẵn sàng nhận nhắc việc.', tag: 'sonha-test', url: './' })) sent++;
   }
   return { sent, devices: targets.length };
 }

@@ -31,7 +31,7 @@ export async function enablePush() {
   }
   if (device.me == null) throw new Error('Chọn "Tôi là ai" trước khi bật thông báo.');
   const perm = await Notification.requestPermission();
-  if (perm !== 'granted') throw new Error('Bạn chưa cho phép thông báo. Vào Cài đặt iPhone → Thông báo → Sổ Nhà để bật.');
+  if (perm !== 'granted') throw new Error('Bạn chưa cho phép thông báo. Vào Cài đặt iPhone → Thông báo → Home để bật.');
 
   const reg = await navigator.serviceWorker.ready;
   const { publicKey } = await api('/vapid');

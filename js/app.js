@@ -13,7 +13,7 @@ const CATS = [
   { id: 'spirit', name: 'Cúng giỗ', icon: '🪔' },
   { id: 'other', name: 'Khác', icon: '📌' },
 ];
-const APP_VERSION = 'v1.21';
+const APP_VERSION = 'v1.22';
 
 const EXP_CATS = [
   { id: 'grocery', name: 'Đi chợ & siêu thị', icon: '🛒' },
@@ -630,7 +630,7 @@ async function updatePushState() {
   el.innerHTML = {
     on: '✓ Máy này đang nhận thông báo.',
     off: 'Máy này chưa bật thông báo.',
-    denied: '<span class="err">Thông báo đang bị chặn. Vào Cài đặt iPhone → Thông báo → Sổ Nhà để bật lại.</span>',
+    denied: '<span class="err">Thông báo đang bị chặn. Vào Cài đặt iPhone → Thông báo → Home để bật lại.</span>',
     unsupported: 'Trình duyệt này chưa hỗ trợ thông báo.',
   }[s];
 }

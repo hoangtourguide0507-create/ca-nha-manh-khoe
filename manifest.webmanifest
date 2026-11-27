@@ -1,6 +1,6 @@
 {
-  "name": "Sổ Nhà",
-  "short_name": "Sổ Nhà",
+  "name": "Home",
+  "short_name": "Home",
   "description": "Nhắc việc nhà, hóa đơn và ghi các khoản chi lớn cho hai vợ chồng",
   "lang": "vi",
   "start_url": "./",

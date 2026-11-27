@@ -1,6 +1,6 @@
 // Service worker: chạy offline + nhận thông báo đẩy.
 // Khi sửa file giao diện, tăng số phiên bản để máy tải bản mới.
-const CACHE = 'sonha-v23';
+const CACHE = 'sonha-v24';
 const ASSETS = [
   './',
   'index.html',
@@ -73,7 +73,7 @@ self.addEventListener('push', (e) => {
     d = { body: e.data ? e.data.text() : '' };
   }
   const jobs = [
-    self.registration.showNotification(d.title || 'Sổ Nhà', {
+    self.registration.showNotification(d.title || 'Home', {
       body: d.body || '',
       icon: 'icons/icon-192.png',
       badge: 'icons/icon-192.png',
