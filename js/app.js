@@ -13,7 +13,7 @@ const CATS = [
   { id: 'spirit', name: 'Cúng giỗ', icon: '🪔' },
   { id: 'other', name: 'Khác', icon: '📌' },
 ];
-const APP_VERSION = 'v1.18';
+const APP_VERSION = 'v1.19';
 
 const EXP_CATS = [
   { id: 'grocery', name: 'Đi chợ & siêu thị', icon: '🛒' },
@@ -1242,7 +1242,7 @@ function expenseForm(e = {}, scan = null) {
   const items = e.items || [];
   const showItems = items.length > 0 || e.category === 'grocery';
   openSheet(`
-  <form class="form" data-form="expense" data-id="${e.id || ''}" data-adjust="${scan ? (scan.fee || 0) + (scan.service || 0) + (scan.vat || 0) - (scan.discount || 0) : e.adjust || 0}">
+  <form class="form" data-form="expense" data-id="${e.id || ''}" data-adjust="${scan ? (scan.fee || 0) + (scan.service || 0) + (scan.vat || 0) - (scan.discount || 0) : e.adjust || 0}" data-need-amount="${scan?.kind === 'order' && scan?.source === 'shopee' && scan?.total == null ? '1' : ''}">
     <h3>${isNew ? (scan ? 'Kiểm tra hóa đơn' : 'Ghi khoản chi') : 'Sửa khoản chi'}</h3>
     ${scan ? scanNote(scan) : isNew ? `<button type="button" class="btn scan-btn" data-act="scanMenu">📷 Quét bill hoặc ảnh đơn online để điền tự động</button>` : ''}
     <label>Khoản chi<input name="title" required value="${esc(e.title || '')}" placeholder="VD: Đi Co.opmart, mua xe SH…"></label>
@@ -1287,6 +1287,8 @@ function saveExpense(form) {
   const f = Object.fromEntries(new FormData(form));
   const items = readItems(form);
   const itemsSum = items.reduce((s, x) => s + x.amount, 0);
+  // đơn Shopee chưa đọc được Thành tiền: không tự cộng giá món, bắt nhập đúng Thành tiền
+  if (form.dataset.needAmount && !f.amount.trim()) return toast('Nhập Số tiền đúng bằng dòng Thành tiền trên ảnh');
   const amount = f.amount.trim() ? parseMoney(f.amount) : itemsSum || null;
   if (!f.title.trim()) return toast('Nhập tên khoản chi');
   if (!amount) return toast('Số tiền chưa đúng (VD: 579k, 1.250.000)');
@@ -1642,6 +1644,8 @@ function scanNote(s) {
   let msg;
   if (s.kind === 'payment') {
     msg = s.total ? `✓ Biên lai ${s.sourceName}: ${money(s.total)}${s.vendor ? ` → ${s.vendor}` : ''}. Kiểm tra rồi bấm Lưu.` : '⚠️ Không thấy số tiền trong ảnh — nhập tay nhé.';
+  } else if (s.kind === 'order' && s.source === 'shopee' && s.total == null) {
+    msg = `⚠️ Đơn Shopee: chưa đọc được dòng Thành tiền — nhập Số tiền đúng bằng Thành tiền trên ảnh rồi bấm Lưu.`;
   } else if (!n) {
     msg = s.kind === 'order' && s.total ? `ℹ️ Đơn ${s.sourceName}: ${money(s.total)}, chưa đọc được từng món — thêm tay nếu cần.` : '⚠️ Chưa đọc được món nào — nhập tay hoặc chụp lại rõ hơn.';
   } else {

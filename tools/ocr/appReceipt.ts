@@ -380,6 +380,8 @@ function parseOrder(lines: string[], src: { source: AppSource; name: string }): 
       }
       if (!tk && tokens.length) tk = tokens[tokens.length - 1]
       if (!tk) tk = pending
+      // Shopee: giá món đọc không ra vẫn ghi món (số tiền lấy theo Thành tiền)
+      if (!tk && nameBuf.length && src.source === 'shopee') tk = { values: [0], negative: false, sure: false, index: 0 }
       if (tk && nameBuf.length) {
         const base = cleanName(nameBuf.join(' ').replace(MONEY_RE, ' '))
         if (variant) {
@@ -435,11 +437,13 @@ function parseOrder(lines: string[], src: { source: AppSource; name: string }): 
     const amount = whole ? v : v * it.qty
     return { name: it.name, quantity: it.qty, unitPrice: whole ? Math.round(v / it.qty) : v, amount, check: pick.hidden ? items.length > 1 : v !== it.money.values[0] || (pick.status !== 'OK' && it.money.values.length > 1) }
   })
-  if (pick.hidden) {
+  // Shopee không đọc được dòng Thành tiền: không đoán số tiền từ giá món
+  const missingThanhTien = src.source === 'shopee' && thanhTien == null
+  if (missingThanhTien) notes.push('Không đọc được dòng Thành tiền. Nhập Số tiền đúng bằng Thành tiền trên ảnh.')
+  else if (pick.hidden) {
     const fmt = (n: number) => new Intl.NumberFormat('vi-VN').format(n)
     if (items.length === 1) {
       notes.push(`Số tiền lấy theo dòng Thành tiền ${fmt(pick.total!)}; giá món = số tiền thực trả.`)
-      if (pick.hidden.listed[0] && pick.hidden.listed[0] !== pick.total) notes.push(`Giá bán trên đơn đọc được khoảng ${fmt(pick.hidden.listed[0])} (có thể sai vài số).`)
     } else {
       notes.push(`Số tiền lấy theo dòng Thành tiền ${fmt(pick.total!)}; các món cộng lại ${fmt(pick.subtotal!)}${pick.hidden.gap > 0 ? ` → coi ${fmt(pick.hidden.gap)} là voucher/giảm giá` : pick.hidden.gap < 0 ? ` → coi ${fmt(-pick.hidden.gap)} là phí ship/phí` : ''}. Giá từng món có thể sai vài số, xem lại.`)
     }
@@ -455,7 +459,7 @@ function parseOrder(lines: string[], src: { source: AppSource; name: string }): 
     merchant,
     date: when?.date ?? null,
     time: when?.time ?? null,
-    total: pick.total,
+    total: missingThanhTien ? null : pick.total,
     subtotal: pick.subtotal,
     fee: pick.fee,
     discount: pick.discount,
@@ -463,8 +467,8 @@ function parseOrder(lines: string[], src: { source: AppSource; name: string }): 
     orderId,
     paymentMethod: method,
     content: null,
-    status: pick.status === 'OK' && pick.corrected ? 'CORRECTED' : pick.status,
-    hiddenBreakdown: !!pick.hidden,
+    status: missingThanhTien ? 'MISMATCH' : pick.status === 'OK' && pick.corrected ? 'CORRECTED' : pick.status,
+    hiddenBreakdown: !missingThanhTien && !!pick.hidden,
     notes,
   }
 }
