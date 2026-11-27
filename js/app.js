@@ -1,6 +1,6 @@
 import * as S from './store.js';
 import * as D from './schedule.js';
-import { lunarShort } from './lunar.js';
+import { lunarShort, toLunar } from './lunar.js';
 import { enablePush, disablePush, pushState, refreshPushOwner, isStandalone } from './push.js';
 
 // ---------- Danh mục & mẫu ----------
@@ -13,7 +13,7 @@ const CATS = [
   { id: 'spirit', name: 'Cúng giỗ', icon: '🪔' },
   { id: 'other', name: 'Khác', icon: '📌' },
 ];
-const APP_VERSION = 'v1.22';
+const APP_VERSION = 'v1.23';
 
 const EXP_CATS = [
   { id: 'grocery', name: 'Đi chợ & siêu thị', icon: '🛒' },
@@ -277,6 +277,8 @@ function fmtDateTime(s) {
 // ---------- Trạng thái giao diện ----------
 let tab = localStorage.getItem('sonha:tab') || 'today';
 let expYear = new Date().getFullYear();
+let expMonth = D.today().slice(0, 7); // tháng đang xem trên lịch chi tiêu
+let expDay = null; // ngày đang chọn trên lịch (null = cả tháng)
 let taskFilter = 'all';
 let subjFilter = null;
 
@@ -424,9 +426,6 @@ function viewExpenses() {
     .sort((a, b) => b.sum - a.sum);
   const max = Math.max(1, ...byCat.map((x) => x.sum));
 
-  const months = {};
-  for (const e of list) (months[(e.at || '').slice(0, 7)] ||= []).push(e);
-
   const idx = years.indexOf(expYear);
   const pmax = Math.max(1, ...per.byCat.map((x) => x.sum));
   const periodicCard = per.total
@@ -475,20 +474,98 @@ function viewExpenses() {
     <button class="btn" data-act="priceBook">🏷️ Giá từng món</button>
     <button class="btn" data-act="shopDir">📒 Nơi mua</button>
   </div>
-  ${Object.entries(months)
-    .map(
-      ([ym, es]) => `<section><h2>Tháng ${Number(ym.slice(5))}<span class="count">${money(es.reduce((s, e) => s + (e.amount || 0), 0))}</span></h2>
-      ${es
-        .map(
-          (e) => `<div class="card task" data-act="editExpense" data-id="${e.id}">
-          <div class="ico" data-cat="${esc(e.category || 'other')}">${catOf(e.category, EXP_CATS).icon}</div>
-          <div class="body"><div class="title">${esc(e.title)}</div><div class="meta"><span>${fmtDateTime(e.at)}</span>${e.items?.length ? `<span>🧾 ${e.items.length} món</span>` : ''}${e.method ? `<span>${esc(e.method)}</span>` : ''}<span>${esc(who(e.by))}</span></div></div>
-          <div class="amount">${money(e.amount)}</div></div>`
-        )
-        .join('')}</section>`
-    )
-    .join('')}
-  ${!list.length ? `<div class="empty"><div class="big">👜</div><div>Chưa có khoản chi nào trong năm ${expYear}.</div><div class="hint">Bấm nút 📷 giữa thanh dưới để chụp bill hoặc chọn ảnh đơn Shopee, MoMo…</div></div>` : ''}`;
+  ${expenseCalendar(all)}`;
+}
+
+// ---------- Lịch chi tiêu (dương + âm) ----------
+const CAN = ['Giáp', 'Ất', 'Bính', 'Đinh', 'Mậu', 'Kỷ', 'Canh', 'Tân', 'Nhâm', 'Quý'];
+const CHI = ['Tý', 'Sửu', 'Dần', 'Mão', 'Thìn', 'Tỵ', 'Ngọ', 'Mùi', 'Thân', 'Dậu', 'Tuất', 'Hợi'];
+const canChi = (y) => `${CAN[(y + 6) % 10]} ${CHI[(y + 8) % 12]}`;
+const wdLong = (s) => ({ CN: 'Chủ nhật', T2: 'Thứ Hai', T3: 'Thứ Ba', T4: 'Thứ Tư', T5: 'Thứ Năm', T6: 'Thứ Sáu', T7: 'Thứ Bảy' })[D.weekday(s)];
+const lunarMonthName = (l) => `${l.month}${l.leap ? ' nhuận' : ''}`;
+
+/** 653.400 → "653k", 1.250.000 → "1,3tr", 84.000.000 → "84tr". */
+function moneyShort(n) {
+  const r = (x) => String(x >= 100 ? Math.round(x) : Math.round(x * 10) / 10).replace('.', ',');
+  if (n >= 1e9) return r(n / 1e9) + 'tỷ';
+  if (n >= 1e6) return r(n / 1e6) + 'tr';
+  if (n >= 1e3) return Math.round(n / 1e3) + 'k';
+  return String(Math.round(n));
+}
+const shiftMonth = (ym, n) => D.addMonths(`${ym}-01`, n).slice(0, 7);
+
+function expenseRow(e) {
+  return `<div class="card task" data-act="editExpense" data-id="${e.id}">
+    <div class="ico" data-cat="${esc(e.category || 'other')}">${catOf(e.category, EXP_CATS).icon}</div>
+    <div class="body"><div class="title">${esc(e.title)}</div><div class="meta"><span>${(e.at || '').slice(11, 16) || '—'}</span>${e.items?.length ? `<span>🧾 ${e.items.length} món</span>` : ''}${e.method ? `<span>${esc(e.method)}</span>` : ''}<span>${esc(who(e.by))}</span></div></div>
+    <div class="amount">${money(e.amount)}</div></div>`;
+}
+
+function expenseCalendar(all) {
+  const ym = expMonth;
+  const [y, m] = ym.split('-').map(Number);
+  const nDays = D.daysInMonth(y, m);
+  const today = D.today();
+  const inMonth = all.filter((e) => (e.at || '').startsWith(ym)).sort((a, b) => (b.at || '').localeCompare(a.at || ''));
+  const byDay = {};
+  for (const e of inMonth) (byDay[e.at.slice(0, 10)] ||= []).push(e);
+  const sumOf = (es) => es.reduce((s, e) => s + (e.amount || 0), 0);
+  const daySum = Object.fromEntries(Object.entries(byDay).map(([d, es]) => [d, sumOf(es)]));
+  const monthSum = sumOf(inMonth);
+  const maxDay = Math.max(1, ...Object.values(daySum));
+
+  const first = `${ym}-01`;
+  const last = D.fmt(y, m, nDays);
+  const l1 = toLunar(first);
+  const l2 = toLunar(last);
+  const lunarRange =
+    l1.month === l2.month && l1.leap === l2.leap
+      ? `Tháng ${lunarMonthName(l1)} âm`
+      : `Tháng ${lunarMonthName(l1)} – ${lunarMonthName(l2)} âm`;
+  const lunarYears = l1.year === l2.year ? canChi(l1.year) : `${canChi(l1.year)} – ${canChi(l2.year)}`;
+
+  const lead = (new Date(Date.UTC(y, m - 1, 1)).getUTCDay() + 6) % 7; // tuần bắt đầu từ Thứ Hai
+  const cells = [];
+  for (let i = 0; i < lead; i++) cells.push('<div class="cal-cell blank"></div>');
+  for (let d = 1; d <= nDays; d++) {
+    const ds = D.fmt(y, m, d);
+    const l = toLunar(ds);
+    const sum = daySum[ds] || 0;
+    const lv = sum ? (sum / maxDay > 0.5 ? 3 : sum / maxDay > 0.15 ? 2 : 1) : 0;
+    const lunarTxt = l.day === 1 || d === 1 ? `${l.day}/${l.month}${l.leap ? 'N' : ''}` : String(l.day);
+    const cls = ['cal-cell', lv ? `lv${lv}` : '', ds === today ? 'is-today' : '', ds === expDay ? 'on' : '', l.day === 1 || l.day === 15 ? 'moon' : '', (lead + d - 1) % 7 === 6 ? 'sun' : '']
+      .filter(Boolean)
+      .join(' ');
+    cells.push(
+      `<button class="${cls}" data-act="expDay" data-d="${ds}" aria-label="${wdLong(ds)} ${D.short(ds)}, ${lunarShort(ds)}${sum ? ', ' + money(sum) : ''}"><span class="dd">${d}</span><span class="ld">${lunarTxt}</span><span class="am">${sum ? moneyShort(sum) : ''}</span></button>`
+    );
+  }
+
+  const days = expDay && expDay.startsWith(ym) ? [expDay] : Object.keys(byDay).sort().reverse();
+  const groups = days
+    .map((ds) => {
+      const es = byDay[ds] || [];
+      const head = `<h2 class="day-h"><span>${wdLong(ds)}, ${D.short(ds)}<small>${lunarShort(ds)}</small></span>${es.length ? `<span class="count">${money(sumOf(es))}</span>` : ''}</h2>`;
+      if (!es.length)
+        return `<section>${head}<div class="empty slim"><div>Ngày này chưa có khoản chi nào.</div><button class="btn" data-act="fab">+ Ghi khoản chi ngày ${D.short(ds)}</button></div></section>`;
+      return `<section>${head}${es.map(expenseRow).join('')}</section>`;
+    })
+    .join('');
+
+  return `
+  <div class="card cal">
+    <div class="cal-top">
+      <button class="icon-btn" data-act="expMonth" data-m="${shiftMonth(ym, -1)}" aria-label="Tháng trước">‹</button>
+      <button class="cal-title" data-act="expMonth" data-m="${today.slice(0, 7)}"><b>Tháng ${m}/${y}</b><small>${lunarRange} · ${lunarYears}</small></button>
+      <button class="icon-btn" data-act="expMonth" data-m="${shiftMonth(ym, 1)}" aria-label="Tháng sau">›</button>
+    </div>
+    <div class="cal-sum"><span>${inMonth.length} khoản</span><b>${money(monthSum) || '0 đ'}</b></div>
+    <div class="cal-grid cal-wd">${['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map((w) => `<span>${w}</span>`).join('')}</div>
+    <div class="cal-grid">${cells.join('')}</div>
+    ${expDay ? `<button class="chip cal-all" data-act="expDay" data-d="${expDay}">✕ Bỏ chọn ngày · xem cả tháng</button>` : '<div class="hint cal-hint">Bấm vào một ngày để xem riêng ngày đó.</div>'}
+  </div>
+  ${groups}
+  ${!inMonth.length && !expDay ? `<div class="empty"><div class="big">👜</div><div>Chưa có khoản chi nào trong tháng ${m}/${y}.</div><div class="hint">Bấm nút 📷 giữa thanh dưới để chụp bill hoặc chọn ảnh đơn Shopee, MoMo…</div></div>` : ''}`;
 }
 
 function viewSettings() {
@@ -1310,6 +1387,8 @@ function saveExpense(form) {
     note: f.note.trim(),
   });
   expYear = Number(e.at.slice(0, 4));
+  expMonth = e.at.slice(0, 7);
+  if (expDay) expDay = e.at.slice(0, 10);
   closeSheet();
   if (old) toast('Đã lưu');
   else if (items.length) toast(`Đã ghi ${money(amount)} · ${items.length} món`, 'Xem giá', () => priceBook());
@@ -1820,6 +1899,18 @@ const actions = {
   year: (d) => {
     if (!d.y) return;
     expYear = Number(d.y);
+    expMonth = `${expYear}-${expMonth.slice(5)}`;
+    expDay = null;
+    render();
+  },
+  expMonth: (d) => {
+    expMonth = d.m;
+    expYear = Number(d.m.slice(0, 4));
+    expDay = null;
+    render();
+  },
+  expDay: (d) => {
+    expDay = expDay === d.d ? null : d.d;
     render();
   },
   editExpense: (d) => expenseForm(S.get('expense', d.id)),
@@ -1861,7 +1952,7 @@ const actions = {
     el.remove();
     if (!box.querySelector('.item-row')) actions.addItemRow(d, box.querySelector('[data-act=addItemRow]'));
   },
-  fab: () => (tab === 'expenses' ? expenseForm() : taskForm({}, tab === 'tasks' && subjFilter ? { subjects: [subjFilter] } : null)),
+  fab: () => (tab === 'expenses' ? expenseForm(expDay && expDay !== D.today() ? { at: `${expDay}T${nowLocal().slice(11)}` } : {}) : taskForm({}, tab === 'tasks' && subjFilter ? { subjects: [subjFilter] } : null)),
   subj: (d) => {
     subjFilter = subjFilter === d.id ? null : d.id;
     taskFilter = 'all';
