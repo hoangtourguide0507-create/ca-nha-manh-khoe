@@ -9,7 +9,7 @@ Web app nhắc việc nhà cho hai vợ chồng. Dữ liệu đồng bộ giữa
   - *Một lần*: ví dụ hết bảo hành, lịch hẹn.
 - **Hôm nay**: hiện việc quá hạn, việc đến hạn hôm nay và việc trong 7 ngày tới. Bấm ✓ là xong, có nút hoàn tác.
 - **Chi phí & nơi mua**: việc bật *Ghi chi phí* sẽ hỏi giá và nơi mua mỗi lần xong (Shopee, Lazada, TikTok Shop, cửa hàng, Zalo người bán), gõ tắt được như `850k` hay `1tr2`. Trang chi tiết hiện giá lần trước, giá rẻ nhất, tổng năm, biểu đồ các kỳ và nút **Mua lại** (mở link Shopee, nhắn Zalo người bán, gọi hoặc chỉ đường tới cửa hàng).
-- **Quét hóa đơn** (tab *Chi tiêu* → 📷): chụp bill siêu thị, app tự đọc tên quán, ngày mua, từng món (số lượng, đơn giá, thành tiền), giảm giá và tổng tiền rồi điền sẵn vào khoản chi để xem lại trước khi lưu. Đọc chữ ngay trên máy, ảnh không gửi đi đâu. Lần đầu tải bộ đọc chữ khoảng 110 MB.
+- **Quét hóa đơn** (nút tròn **📷 Chụp bill** giữa thanh công cụ mở thẳng camera; hoặc tab *Chi tiêu* → 📷 Quét hóa đơn để chọn ảnh có sẵn): chụp bill siêu thị, app tự đọc tên quán, ngày mua, từng món (số lượng, đơn giá, thành tiền), giảm giá và tổng tiền rồi điền sẵn vào khoản chi để xem lại trước khi lưu. Đọc chữ ngay trên máy, ảnh không gửi đi đâu. Lần đầu tải bộ đọc chữ khoảng 110 MB.
 - **Giá từng món** (tab *Chi tiêu* → 🏷️): tra giá mỗi món qua các lần mua, giá gần nhất, ▲▼ so với lần trước, thấp nhất/cao nhất và nơi mua.
 - **Khoản chi**: ghi số tiền, ngày giờ, nhóm, cách thanh toán, người chi. Có tổng theo năm và theo nhóm. Từ một khoản chi có thể *tạo nhắc kèm* như bảo hiểm hay hết bảo hành.
 - **Chi phí định kỳ**: tab *Chi tiêu* gom tiền các việc có ghi chi phí (điện nước, lõi lọc, tẩy giun…) theo năm, theo nhóm, từng việc và theo người/thú cưng. Thẻ của mỗi người (VD Thúi) hiện tổng chi năm nay.

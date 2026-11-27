@@ -554,7 +554,7 @@ function viewSettings() {
     <label class="btn file">Nhập từ file sao lưu<input type="file" accept="application/json,.json" data-act-change="import" hidden></label>
     <button class="btn ghost" data-act="resync">Tải lại toàn bộ từ máy chủ</button>
   </div></section>
-  <p class="foot">Sổ Nhà · v1.9 · 🧡</p>`;
+  <p class="foot">Sổ Nhà · v1.10 · 🧡</p>`;
 }
 
 const views = { today: viewToday, tasks: viewTasks, expenses: viewExpenses, settings: viewSettings };
@@ -1376,11 +1376,12 @@ function expenseShops() {
 // ---------- Quét hóa đơn (đọc chữ ngay trên máy; mã từ sakutara/chia-tien, xem tools/ocr) ----------
 let scanAbort = null;
 
-function startScan() {
+function startScan(camera = false) {
   if (!localStorage.getItem('sonha:ocrReady') && !confirm('Lần đầu quét cần tải bộ đọc chữ khoảng 110 MB (nên dùng Wi-Fi). Từ lần sau quét nhanh hơn và không cần mạng. Tiếp tục?')) return;
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = 'image/*';
+  if (camera) input.capture = 'environment'; // nút giữa thanh công cụ: mở thẳng camera sau
   input.onchange = () => input.files[0] && runScan(input.files[0]);
   input.click();
 }
@@ -1571,6 +1572,7 @@ const actions = {
   },
   followUp: (d) => followUp(S.get('expense', d.id)),
   scanReceipt: () => startScan(),
+  scanCamera: () => startScan(true),
   priceBook: () => priceBook(),
   addItemRow: (d, el) => {
     const box = el.closest('.items-box');
