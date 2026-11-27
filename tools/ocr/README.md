@@ -17,6 +17,12 @@ Model: VietOCR vgg_seq2seq dạng ONNX (Apache-2.0, xem `ocr/vietocr/LICENSE-vie
 - `ocrService.ts`: chuyển tiếp tiến độ tải/nạp, giữ chi tiết lỗi (`lastOcrError`).
 - `js/app.js`: hiện từng bước, tự dừng và báo lỗi nếu đứng yên quá 90 giây, màn lỗi có chi tiết kỹ thuật + Thử lại.
 
+## Bill máy POS quán (`posReceipt.ts`, v1.13)
+- Kiểu "SL · Tên · Thành tiền" (Highlands, Phúc Long, Katinat…): dòng chữ không số ngay dưới món là topping/size → nối vào tên; dòng không SL có số tiền là khuyến mãi (OCR hay mất dấu trừ; tên kiểu mã KM `NWSM.SO.FREE_CAKE`, `KM10%`) hoặc topping tính tiền — thử cả hai cách, chọn cách khớp tổng.
+- Tổng lấy từ Thành tiền / Tổng tiền / dòng thanh toán thẻ, tiền mặt (bỏ Tiền thừa); dòng tổng bị đọc hỏng (`10.00`) tự bị loại.
+- `stripIdLines`: bỏ dòng ShopID, Check, số HĐ, số bàn, SĐT, MST… trước khi phân tích (cả hai bộ đọc).
+- `entry.analyzeText` chạy song song bộ đọc chia-tien và posReceipt, bên nào khớp tổng thì dùng.
+
 ## Ảnh chụp màn hình app (`appReceipt.ts`, viết riêng cho Sổ Nhà)
 - Nhận diện nguồn theo từ khoá: đơn hàng (Shopee, Lazada, TikTok Shop, Tiki, ShopeeFood, Grab, be) hoặc biên lai (MoMo, ZaloPay, ShopeePay, VNPAY, ngân hàng). Không nhận ra thì dùng bộ đọc bill giấy.
 - Đơn hàng: tên món nhiều dòng + `Phân loại hàng` + `x2` + giá (giá gạch ngang bị bỏ), dạng `2x Món` của app đồ ăn, tiền hàng / phí ship / phí khác / voucher, giảm giá / tổng, mã đơn, ngày đặt, phương thức thanh toán.

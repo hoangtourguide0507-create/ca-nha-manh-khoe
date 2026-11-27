@@ -14,6 +14,7 @@ import { computeBill } from '@up/domain/billMath'
 import type { ParsedAdjustment } from '@up/domain/receiptParser'
 import { runOcr, terminateOcrWorker, setModelBase, lastOcrError, type OcrProgressHandler } from './ocrService'
 import { readAppReceipt, mergeScreens, type AppReceipt, type AppSource } from './appReceipt'
+import { readPosReceipt, stripIdLines, type PosReceipt } from './posReceipt'
 
 export { terminateOcrWorker, setModelBase, lastOcrError }
 
@@ -60,6 +61,7 @@ export interface ScanResult {
   /** Kết quả bộ đọc bill giấy (null khi là ảnh app). */
   check: ReceiptCheck | null
   app: AppReceipt | null
+  pos: PosReceipt | null
   summary: ReceiptSummary
 }
 
@@ -86,12 +88,52 @@ export function summarizeApp(a: AppReceipt): ReceiptSummary {
   }
 }
 
-/** Văn bản OCR (một hoặc nhiều ảnh) → ảnh app nếu nhận ra, không thì bộ đọc bill giấy. */
-export function analyzeText(text: string): { check: ReceiptCheck | null; app: AppReceipt | null; summary: ReceiptSummary } {
+function summarizePos(p: PosReceipt, check: ReceiptCheck): ReceiptSummary {
+  return {
+    ...summarize(check),
+    total: p.total,
+    totalSource: p.total == null ? null : p.status === 'UNVERIFIED' ? 'computed' : 'bill',
+    items: p.items.map((i) => ({ ...i })),
+    discount: p.discount,
+    service: 0,
+    vat: 0,
+    fee: p.fee,
+    status: p.status,
+    notes: p.notes,
+  }
+}
+
+const good = (s: string) => s === 'OK' || s === 'CORRECTED'
+
+/** Giờ in trên bill: hh:mm nằm cùng dòng với ngày (VD "Ngay : 27-11-2026 13:51"). */
+function billTime(text: string): string | null {
+  for (const line of text.split('\n')) {
+    if (!/\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}|\d{4}-\d{2}-\d{2}/.test(line)) continue
+    const m = /\b([01]?\d|2[0-3])[:h]([0-5]\d)\b/.exec(line)
+    if (m) return `${m[1].padStart(2, '0')}:${m[2]}`
+  }
+  return null
+}
+
+/**
+ * Văn bản OCR (một hoặc nhiều ảnh) → ảnh app nếu nhận ra, không thì bill giấy.
+ * Bill giấy chạy hai bộ đọc: của chia-tien (bill siêu thị "Tên · SL · Đơn giá · Thành tiền")
+ * và posReceipt (bill quán "SL · Tên · Thành tiền", topping, dòng khuyến mãi); bên nào khớp tổng thì dùng.
+ */
+export function analyzeText(text: string): { check: ReceiptCheck | null; app: AppReceipt | null; pos: PosReceipt | null; summary: ReceiptSummary } {
   const app = readAppReceipt(text)
-  if (app && (app.total != null || app.items.length)) return { check: null, app, summary: summarizeApp(app) }
-  const check = validateReceipt(parseReceipt(text), text)
-  return { check, app: null, summary: summarize(check) }
+  if (app && (app.total != null || app.items.length)) return { check: null, app, pos: null, summary: summarizeApp(app) }
+  const clean = stripIdLines(text)
+  const check = validateReceipt(parseReceipt(clean), clean)
+  const pos = readPosReceipt(clean)
+  // bộ cũ đọc bill kiểu "SL Tên Tiền" thường để dính SL vào đầu tên món
+  const qtyInNames = check.receipt.items.length > 0 && check.receipt.items.filter((i) => /^\d{1,2}\s/.test(i.name)).length * 2 >= check.receipt.items.length
+  const usePos =
+    !!pos &&
+    ((pos.status === 'OK' && (!good(check.status) || qtyInNames)) || (check.status === 'MISMATCH' && pos.status === 'UNVERIFIED' && pos.items.length > 0))
+  const summary = usePos ? summarizePos(pos!, check) : summarize(check)
+  summary.time = billTime(clean)
+  return { check, app: null, pos, summary }
 }
 
 const NONE = { mode: 'NONE' as const, value: 0 }
@@ -131,7 +173,7 @@ export function summarize(check: ReceiptCheck): ReceiptSummary {
 }
 
 /** Phân tích văn bản OCR có sẵn (dán từ công cụ khác, hoặc lớp chữ PDF). */
-export function readReceiptText(raw: string): { text: string; check: ReceiptCheck | null; app: AppReceipt | null; summary: ReceiptSummary } {
+export function readReceiptText(raw: string): { text: string; check: ReceiptCheck | null; app: AppReceipt | null; pos: PosReceipt | null; summary: ReceiptSummary } {
   const app = readAppReceipt(raw)
   const text = app ? raw : reflowBlockText(raw)
   return { text, ...analyzeText(text) }

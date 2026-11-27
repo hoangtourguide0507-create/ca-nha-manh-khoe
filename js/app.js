@@ -13,7 +13,7 @@ const CATS = [
   { id: 'spirit', name: 'Cúng giỗ', icon: '🪔' },
   { id: 'other', name: 'Khác', icon: '📌' },
 ];
-const APP_VERSION = 'v1.12';
+const APP_VERSION = 'v1.13';
 
 const EXP_CATS = [
   { id: 'grocery', name: 'Đi chợ & siêu thị', icon: '🛒' },
@@ -1535,6 +1535,7 @@ function scanToExpense(s) {
     category: shop ? guessCategory(shop, 'grocery') : 'grocery',
     method: 'Thẻ',
     items,
+    note: [s.notes.find((n) => n.startsWith('Khuyến mãi:')), !s.notes.some((n) => n.startsWith('Khuyến mãi:')) && s.discount && `Giảm giá ${money(s.discount)}`].filter(Boolean).join(' · '),
   };
 }
 
