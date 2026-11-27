@@ -11,6 +11,13 @@ Model: VietOCR vgg_seq2seq dạng ONNX (Apache-2.0, xem `ocr/vietocr/LICENSE-vie
 5. **Phân tích** (`domain/receipt/*`): chuẩn hoá số (đ/₫, O→0, l→1…), bỏ dấu để khớp từ khoá, đọc tên quán, ngày, món (1 dòng / 2 dòng / bảng STT GTGT), giảm giá, phí, VAT nhiều mức, tổng.
 6. **Đối chiếu** (`domain/receiptValidation`): món − giảm + phí + VAT phải = tổng bill, đúng từng đồng; lệch thì thử sửa (1↔4, bỏ dòng tổng bị đọc nhầm thành món…) → OK / CORRECTED / MISMATCH / UNVERIFIED.
 
+## Ảnh chụp màn hình app (`appReceipt.ts`, viết riêng cho Sổ Nhà)
+- Nhận diện nguồn theo từ khoá: đơn hàng (Shopee, Lazada, TikTok Shop, Tiki, ShopeeFood, Grab, be) hoặc biên lai (MoMo, ZaloPay, ShopeePay, VNPAY, ngân hàng). Không nhận ra thì dùng bộ đọc bill giấy.
+- Đơn hàng: tên món nhiều dòng + `Phân loại hàng` + `x2` + giá (giá gạch ngang bị bỏ), dạng `2x Món` của app đồ ăn, tiền hàng / phí ship / phí khác / voucher, giảm giá / tổng, mã đơn, ngày đặt, phương thức thanh toán.
+- Ký hiệu ₫ đứng trước số không có trong bảng chữ của VietOCR nên hay bị đọc thành `đ`, `d`, `4` hoặc `2`, dấu trừ hay mất. Số không có tiền tố mà bắt đầu bằng 4/2 có thêm cách hiểu bỏ chữ số đầu; bộ đối chiếu chọn tổ hợp ít sửa nhất sao cho Σ món = tiền hàng và tiền hàng + phí − giảm = tổng.
+- Biên lai: số tiền lớn ở đầu hoặc dòng "Số tiền", người nhận / nhà cung cấp, nội dung, dịch vụ, thời gian, mã giao dịch, phí.
+- Nhiều ảnh: `mergeScreens` bỏ tiêu đề lặp và phần trùng ở chỗ nối.
+
 ## Dựng lại
 ```bash
 cd tools/ocr && npm i
@@ -22,5 +29,6 @@ Kết quả: `js/ocr/ocr.js`, `js/ocr/ocr-worker.js`, `ocr/vietocr/` (≈110 MB,
 ```js
 import { scanReceipt, readReceiptText } from './ocr/ocr.js';
 const { summary, text } = await scanReceipt(file, { onProgress: (p, stage) => {} });
-// summary: { vendor, date, total, items[{name, quantity, unitPrice, amount, check}], discount, service, vat, status, notes[] }
+// ảnh chụp màn hình app, nhiều ảnh: scanReceipt([f1, f2], { screenshot: true })
+// summary: { kind: 'paper'|'order'|'payment', source, sourceName, vendor, time, fee, orderId, paymentMethod, content, date, total, items[{name, quantity, unitPrice, amount, check}], discount, service, vat, status, notes[] }
 ```

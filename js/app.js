@@ -15,6 +15,8 @@ const CATS = [
 ];
 const EXP_CATS = [
   { id: 'grocery', name: 'Đi chợ & siêu thị', icon: '🛒' },
+  { id: 'online', name: 'Mua online', icon: '🛍️' },
+  { id: 'food', name: 'Ăn uống', icon: '🍜' },
   { id: 'car', name: 'Xe cộ', icon: '🚗' },
   { id: 'luxury', name: 'Đồ hiệu', icon: '👜' },
   { id: 'tech', name: 'Điện máy', icon: '📱' },
@@ -23,7 +25,7 @@ const EXP_CATS = [
   { id: 'health', name: 'Sức khỏe', icon: '🩺' },
   { id: 'other', name: 'Khác', icon: '💰' },
 ];
-const METHODS = ['Chuyển khoản', 'Thẻ', 'Tiền mặt', 'Trả góp', 'Khác'];
+const METHODS = ['Chuyển khoản', 'Thẻ', 'Ví điện tử', 'Tiền mặt', 'Trả góp', 'Khác'];
 
 const TEMPLATES = [
   { title: 'Thay cát mèo', icon: '🐱', category: 'pet', type: 'interval', everyDays: 3 },
@@ -466,10 +468,11 @@ function viewExpenses() {
   </div>
   ${periodicCard}
   <div class="scan-row">
-    <button class="btn primary" data-act="scanReceipt">📷 Quét hóa đơn</button>
+    <button class="btn primary" data-act="scanPaper">📷 Bill giấy</button>
+    <button class="btn primary alt" data-act="scanScreens">📱 Đơn online</button>
     <button class="btn" data-act="priceBook">🏷️ Giá từng món</button>
+    <button class="btn" data-act="shopDir">📒 Nơi mua</button>
   </div>
-  <button class="btn dir-btn" data-act="shopDir">📒 Danh bạ nơi mua</button>
   ${Object.entries(months)
     .map(
       ([ym, es]) => `<section><h2>Tháng ${Number(ym.slice(5))}<span class="count">${money(es.reduce((s, e) => s + (e.amount || 0), 0))}</span></h2>
@@ -483,7 +486,7 @@ function viewExpenses() {
         .join('')}</section>`
     )
     .join('')}
-  ${!list.length ? `<div class="empty"><div class="big">👜</div><div>Chưa có khoản chi nào trong năm ${expYear}.</div><div class="hint">Bấm “📷 Quét hóa đơn” để ghi nhanh một lần đi siêu thị.</div></div>` : ''}`;
+  ${!list.length ? `<div class="empty"><div class="big">👜</div><div>Chưa có khoản chi nào trong năm ${expYear}.</div><div class="hint">Bấm nút 📷 giữa thanh dưới để chụp bill hoặc chọn ảnh đơn Shopee, MoMo…</div></div>` : ''}`;
 }
 
 function viewSettings() {
@@ -554,7 +557,7 @@ function viewSettings() {
     <label class="btn file">Nhập từ file sao lưu<input type="file" accept="application/json,.json" data-act-change="import" hidden></label>
     <button class="btn ghost" data-act="resync">Tải lại toàn bộ từ máy chủ</button>
   </div></section>
-  <p class="foot">Sổ Nhà · v1.10 · 🧡</p>`;
+  <p class="foot">Sổ Nhà · v1.11 · 🧡</p>`;
 }
 
 const views = { today: viewToday, tasks: viewTasks, expenses: viewExpenses, settings: viewSettings };
@@ -1237,9 +1240,9 @@ function expenseForm(e = {}, scan = null) {
   const items = e.items || [];
   const showItems = items.length > 0 || e.category === 'grocery';
   openSheet(`
-  <form class="form" data-form="expense" data-id="${e.id || ''}" data-discount="${scan?.discount || 0}">
+  <form class="form" data-form="expense" data-id="${e.id || ''}" data-adjust="${scan ? (scan.fee || 0) + (scan.service || 0) + (scan.vat || 0) - (scan.discount || 0) : e.adjust || 0}">
     <h3>${isNew ? (scan ? 'Kiểm tra hóa đơn' : 'Ghi khoản chi') : 'Sửa khoản chi'}</h3>
-    ${scan ? scanNote(scan) : isNew ? `<button type="button" class="btn scan-btn" data-act="scanReceipt">📷 Quét hóa đơn để điền tự động</button>` : ''}
+    ${scan ? scanNote(scan) : isNew ? `<button type="button" class="btn scan-btn" data-act="scanMenu">📷 Quét bill hoặc ảnh đơn online để điền tự động</button>` : ''}
     <label>Khoản chi<input name="title" required value="${esc(e.title || '')}" placeholder="VD: Đi Co.opmart, mua xe SH…"></label>
     <div class="row2">
       <label>Số tiền<input name="amount" inputmode="decimal" value="${e.amount ? new Intl.NumberFormat('vi-VN').format(e.amount) : ''}" placeholder="VD: 579k, 95tr"></label>
@@ -1296,6 +1299,7 @@ function saveExpense(form) {
     by: f.by === 'all' ? 'all' : Number(f.by),
     shop: (f.shop || '').trim(),
     items: items.length ? items : null,
+    adjust: items.length ? Number(form.dataset.adjust) || 0 : 0,
     note: f.note.trim(),
   });
   expYear = Number(e.at.slice(0, 4));
@@ -1345,12 +1349,14 @@ function updateItemsSum(form) {
   const items = readItems(form);
   const sum = items.reduce((s, x) => s + x.amount, 0);
   const amount = parseMoney(form.elements.amount.value);
-  const discount = Number(form.dataset.discount) || 0;
+  // phần chênh đã biết: phí ship/phục vụ/VAT − giảm giá, voucher
+  const adjust = Number(form.dataset.adjust) || 0;
   const gap = amount && sum ? amount - sum : 0;
-  el.classList.toggle('warn', !!gap && gap !== -discount);
+  const known = gap !== 0 && gap === adjust;
+  el.classList.toggle('warn', !!gap && !known);
   el.textContent = !items.length
     ? ''
-    : `${items.length} món · ${money(sum)}${gap ? (gap === -discount ? ` · giảm ${money(discount)}` : ` · lệch ${money(Math.abs(gap))} so với Số tiền`) : ''}`;
+    : `${items.length} món · ${money(sum)}${gap ? (known ? (gap < 0 ? ` · đã giảm ${money(-gap)}` : ` · + phí ${money(gap)}`) : ` · lệch ${money(Math.abs(gap))} so với Số tiền`) : ''}`;
 }
 
 // sửa SL hoặc đơn giá → tự tính thành tiền
@@ -1376,29 +1382,41 @@ function expenseShops() {
 // ---------- Quét hóa đơn (đọc chữ ngay trên máy; mã từ sakutara/chia-tien, xem tools/ocr) ----------
 let scanAbort = null;
 
-function startScan(camera = false) {
+/** mode: camera (chụp bill giấy) · paper (chọn ảnh bill giấy) · screens (ảnh chụp màn hình app, chọn được nhiều ảnh) */
+function startScan(mode = 'paper') {
   if (!localStorage.getItem('sonha:ocrReady') && !confirm('Lần đầu quét cần tải bộ đọc chữ khoảng 110 MB (nên dùng Wi-Fi). Từ lần sau quét nhanh hơn và không cần mạng. Tiếp tục?')) return;
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = 'image/*';
-  if (camera) input.capture = 'environment'; // nút giữa thanh công cụ: mở thẳng camera sau
-  input.onchange = () => input.files[0] && runScan(input.files[0]);
+  if (mode === 'camera') input.capture = 'environment';
+  if (mode === 'screens') input.multiple = true;
+  input.onchange = () => input.files.length && runScan([...input.files].slice(0, 6), mode === 'screens');
   input.click();
 }
 
-async function runScan(file) {
+function scanMenu() {
+  openSheet(`<div class="detail scan-menu">
+    <h3>Ghi khoản chi từ ảnh</h3>
+    <button class="scan-choice" data-act="scanCamera"><span class="big">📷</span><span><b>Chụp bill giấy</b><small>Siêu thị, chợ, nhà hàng, cửa hàng</small></span></button>
+    <button class="scan-choice" data-act="scanScreens"><span class="big">📱</span><span><b>Ảnh chụp màn hình</b><small>Đơn Shopee, Lazada, TikTok Shop, ShopeeFood, Grab · biên lai MoMo, ZaloPay, ngân hàng. Đơn dài chọn được nhiều ảnh.</small></span></button>
+    <button class="scan-choice" data-act="scanPaper"><span class="big">🖼️</span><span><b>Ảnh bill có sẵn</b><small>Chọn ảnh bill giấy trong thư viện</small></span></button>
+  </div>`);
+}
+
+async function runScan(files, screenshot = false) {
   const ctrl = new AbortController();
   openSheet(`<div class="detail scan-sheet">
-    <h3>📷 Đang đọc hóa đơn</h3>
+    <h3>${screenshot ? '📱 Đang đọc ảnh đơn hàng' : '📷 Đang đọc hóa đơn'}</h3>
     <div class="scan-prog"><i></i></div>
     <div class="hint" data-scan-stage>Đang mở ảnh…</div>
-    <div class="hint">${localStorage.getItem('sonha:ocrReady') ? 'Thường mất 10–40 giây.' : 'Lần đầu phải tải bộ đọc chữ nên có thể mất 1–3 phút.'} Ảnh chỉ xử lý trên máy này, không gửi đi đâu.</div>
+    <div class="hint">${localStorage.getItem('sonha:ocrReady') ? `Thường mất 10–40 giây${files.length > 1 ? ' mỗi ảnh' : ''}.` : 'Lần đầu phải tải bộ đọc chữ nên có thể mất 1–3 phút.'} Ảnh chỉ xử lý trên máy này, không gửi đi đâu.</div>
     <button class="btn" data-act="closeSheet">Hủy quét</button>
   </div>`);
   scanAbort = ctrl;
   try {
     const { scanReceipt } = await import('./ocr/ocr.js');
-    const r = await scanReceipt(file, {
+    const r = await scanReceipt(files, {
+      screenshot,
       signal: ctrl.signal,
       onProgress: (p, stage) => {
         const bar = $('#sheet .scan-prog i');
@@ -1415,38 +1433,99 @@ async function runScan(file) {
     if (ctrl.signal.aborted || err?.code === 'OCR_CANCELLED') return;
     scanAbort = null;
     closeSheet();
-    toast(err?.code ? err.message : 'Không quét được ảnh. Kiểm tra mạng rồi thử lại.', 'Nhập tay', () => expenseForm({ category: 'grocery' }));
+    toast(err?.code ? err.message : 'Không quét được ảnh. Kiểm tra mạng rồi thử lại.', 'Nhập tay', () => expenseForm({ category: screenshot ? 'online' : 'grocery' }));
   }
 }
 
 const titleCase = (s) =>
   s === s.toLocaleUpperCase('vi') ? s.toLocaleLowerCase('vi').replace(/(^|\s)(\S)/g, (_, a, b) => a + b.toLocaleUpperCase('vi')) : s;
 
+const shorten = (t, n = 42) => (t.length > n ? t.slice(0, n - 1).trimEnd() + '…' : t);
+
+/** Đoán nhóm chi từ tên người nhận / nội dung biên lai. */
+function guessCategory(text, fallback = 'other') {
+  const f = fold(text);
+  if (/dien luc|evn|cap nuoc|sawaco|nuoc sach|internet|fpt telecom|vnpt|viettel|truyen hinh|chung cu|phi quan ly|gas/.test(f)) return 'home';
+  if (/highlands|starbucks|phuc long|cafe|coffee|ca phe|tra sua|nha hang|quan an|com |pho |bun |lau|bbq|kfc|lotte ?ria|jollibee|pizza|food/.test(f)) return 'food';
+  if (/co\.?op|bach hoa xanh|winmart|lotte mart|aeon|big ?c|go!|mm mega|emart|sieu thi|cho /.test(f)) return 'grocery';
+  if (/grab|xanh ?sm|\bbe\b|vietjet|vietnam airlines|bamboo|agoda|traveloka|booking|khach san|hotel|petrolimex|xang/.test(f)) return 'travel';
+  if (/nha thuoc|pharmacity|long chau|an khang|benh vien|phong kham|nha khoa|thu y/.test(f)) return 'health';
+  return fallback;
+}
+
+function methodOf(pm, fallback) {
+  const f = fold(pm || '');
+  if (!f) return fallback;
+  if (/khi nhan hang|cod|tien mat/.test(f)) return 'Tiền mặt';
+  if (/chuyen khoan|ngan hang|banking|napas/.test(f)) return 'Chuyển khoản';
+  if (/\bthe\b|visa|master|jcb|credit|tin dung|ghi no/.test(f)) return 'Thẻ';
+  if (/pay|momo|vi |vi$|xu|viettel money/.test(f)) return 'Ví điện tử';
+  return fallback;
+}
+
 function scanToExpense(s) {
+  const at = s.date ? `${s.date}T${s.time || nowLocal().slice(11)}` : nowLocal();
+  const items = s.items.map((i) => ({ name: i.name, qty: i.quantity, price: i.unitPrice, amount: i.amount, check: i.check }));
+  if (s.kind === 'order') {
+    const shop = [s.sourceName, s.vendor].filter(Boolean).join(' · ');
+    const food = ['shopeefood', 'grab', 'be'].includes(s.source);
+    const notes = [s.orderId && `Mã đơn ${s.orderId}`, s.fee && `Phí ship/phí ${money(s.fee)}`, s.discount && `Giảm giá, voucher ${money(s.discount)}`].filter(Boolean);
+    return {
+      title: items.length ? `${shorten(items[0].name)}${items.length > 1 ? ` +${items.length - 1} món` : ''}` : `Đơn ${s.sourceName}`,
+      shop,
+      amount: s.total,
+      at,
+      category: food ? 'food' : 'online',
+      method: methodOf(s.paymentMethod, 'Ví điện tử'),
+      items,
+      note: notes.join(' · '),
+    };
+  }
+  if (s.kind === 'payment') {
+    const payee = s.vendor ? titleCase(s.vendor) : '';
+    const transfer = s.source === 'bank' || /chuyen tien|chuyen khoan/.test(fold(s.content || ''));
+    return {
+      title: transfer ? s.content || (payee ? `Chuyển tiền cho ${payee}` : 'Chuyển tiền') : payee || s.content || `Thanh toán ${s.sourceName}`,
+      shop: payee,
+      amount: s.total,
+      at,
+      category: guessCategory(`${payee} ${s.content || ''}`),
+      method: s.source === 'bank' ? 'Chuyển khoản' : 'Ví điện tử',
+      note: [s.sourceName, transfer && payee && `Người nhận: ${payee}`, !transfer && s.content, s.orderId && `Mã GD ${s.orderId}`].filter(Boolean).join(' · '),
+    };
+  }
   const shop = s.vendor ? titleCase(s.vendor.trim()) : '';
   return {
     title: shop || 'Đi siêu thị',
     shop,
     amount: s.total,
-    at: s.date ? `${s.date}T${nowLocal().slice(11)}` : nowLocal(),
-    category: 'grocery',
+    at,
+    category: shop ? guessCategory(shop, 'grocery') : 'grocery',
     method: 'Thẻ',
-    items: s.items.map((i) => ({ name: i.name, qty: i.quantity, price: i.unitPrice, amount: i.amount, check: i.check })),
+    items,
   };
 }
 
 function scanNote(s) {
   const good = s.status === 'OK' || s.status === 'CORRECTED';
-  const msg = !s.items.length
-    ? '⚠️ Chưa đọc được món nào — nhập tay hoặc chụp lại rõ hơn.'
-    : {
-        OK: `✓ Đọc được ${s.items.length} món, tổng khớp hóa đơn. Xem lại rồi bấm Lưu.`,
-        CORRECTED: `✓ Đọc được ${s.items.length} món, đã tự sửa vài số cho khớp tổng — xem lại dòng tô vàng.`,
-        MISMATCH: `⚠️ Đọc được ${s.items.length} món nhưng tổng chưa khớp hóa đơn — so với ảnh và sửa dòng tô vàng.`,
-        UNVERIFIED: `ℹ️ Đọc được ${s.items.length} món. Hóa đơn không có dòng tổng để đối chiếu — kiểm tra lại Số tiền.`,
-      }[s.status];
-  return `<div class="scan-note ${good && s.items.length ? 'ok' : 'warn'}"><b>${msg}</b>${
-    s.notes.length ? `<details><summary>Chi tiết đối chiếu</summary>${s.notes.map((n) => `<div>${esc(n)}</div>`).join('')}</details>` : ''
+  const n = s.items.length;
+  let msg;
+  if (s.kind === 'payment') {
+    msg = s.total ? `✓ Biên lai ${s.sourceName}: ${money(s.total)}${s.vendor ? ` → ${s.vendor}` : ''}. Kiểm tra rồi bấm Lưu.` : '⚠️ Không thấy số tiền trong ảnh — nhập tay nhé.';
+  } else if (!n) {
+    msg = s.kind === 'order' && s.total ? `ℹ️ Đơn ${s.sourceName}: ${money(s.total)}, chưa đọc được từng món — thêm tay nếu cần.` : '⚠️ Chưa đọc được món nào — nhập tay hoặc chụp lại rõ hơn.';
+  } else {
+    const what = s.kind === 'order' ? `Đơn ${s.sourceName}: ${n} món` : `Đọc được ${n} món`;
+    msg = {
+      OK: `✓ ${what}, tổng khớp${s.kind === 'order' ? ' (tiền hàng + phí − giảm giá)' : ' hóa đơn'}. Xem lại rồi bấm Lưu.`,
+      CORRECTED: s.kind === 'order' ? `✓ ${what}, tổng khớp sau khi sửa vài số có ký hiệu ₫ bị đọc nhầm. Xem lại rồi bấm Lưu.` : `✓ ${what}, đã tự sửa vài số cho khớp tổng — xem lại dòng tô vàng.`,
+      MISMATCH: `⚠️ ${what} nhưng tổng chưa khớp — so với ảnh và sửa dòng tô vàng.`,
+      UNVERIFIED: `ℹ️ ${what}. Ảnh không có dòng tổng để đối chiếu — kiểm tra lại Số tiền.`,
+    }[s.status];
+  }
+  const ok = s.kind === 'payment' ? !!s.total : good && n;
+  return `<div class="scan-note ${ok ? 'ok' : 'warn'}"><b>${msg}</b>${
+    s.notes.length ? `<details><summary>Chi tiết đối chiếu</summary>${s.notes.map((x) => `<div>${esc(x)}</div>`).join('')}</details>` : ''
   }</div>`;
 }
 
@@ -1571,8 +1650,10 @@ const actions = {
     closeSheet();
   },
   followUp: (d) => followUp(S.get('expense', d.id)),
-  scanReceipt: () => startScan(),
-  scanCamera: () => startScan(true),
+  scanMenu: () => scanMenu(),
+  scanCamera: () => startScan('camera'),
+  scanPaper: () => startScan('paper'),
+  scanScreens: () => startScan('screens'),
   priceBook: () => priceBook(),
   addItemRow: (d, el) => {
     const box = el.closest('.items-box');

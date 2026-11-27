@@ -377,7 +377,14 @@ details.cost-more[open] summary { margin-bottom: 6px; }
 .price-row input[name="price"] { font-weight: 800; color: var(--accent); }
 
 /* ---------- Quét hóa đơn & giá từng món ---------- */
-.scan-row { display: grid; grid-template-columns: 1.2fr 1fr; gap: 10px; margin-bottom: 10px; }
+.scan-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 22px; }
+.btn.primary.alt { background: linear-gradient(135deg, #b67cff, #e05fb0); box-shadow: 0 8px 18px -8px rgba(170, 90, 220, 0.7); }
+.scan-menu { gap: 10px; }
+.scan-choice { display: flex; align-items: center; gap: 14px; text-align: left; border: 2px solid var(--line); background: #fffaf6; border-radius: 18px; padding: 14px; color: var(--text); }
+.scan-choice:active { transform: scale(0.98); }
+.scan-choice .big { font-size: 30px; width: 52px; height: 52px; border-radius: 16px; background: var(--accent-soft); display: grid; place-items: center; flex: none; }
+.scan-choice b { display: block; font-size: 16px; font-weight: 900; }
+.scan-choice small { display: block; color: var(--muted); font-size: 13px; font-weight: 600; line-height: 1.4; margin-top: 2px; }
 .scan-btn { border-style: dashed; color: var(--accent); background: var(--accent-soft); border-color: #ffc6d4; }
 .scan-sheet { text-align: center; }
 .scan-prog { height: 12px; background: var(--surface-2); border-radius: 99px; overflow: hidden; }
@@ -431,3 +438,4 @@ input, select { min-width: 0; max-width: 100%; }
 }
 .tabbar .tab-scan .scan-circle svg { width: 28px; height: 28px; padding: 0; background: none; }
 .tabbar .tab-scan:active .scan-circle { transform: scale(0.9); }
+.items-box[hidden] { display: none; }
