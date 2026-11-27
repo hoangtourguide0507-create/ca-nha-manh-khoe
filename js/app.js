@@ -13,7 +13,7 @@ const CATS = [
   { id: 'spirit', name: 'Cúng giỗ', icon: '🪔' },
   { id: 'other', name: 'Khác', icon: '📌' },
 ];
-const APP_VERSION = 'v1.14';
+const APP_VERSION = 'v1.15';
 
 const EXP_CATS = [
   { id: 'grocery', name: 'Đi chợ & siêu thị', icon: '🛒' },
@@ -470,8 +470,8 @@ function viewExpenses() {
   </div>
   ${periodicCard}
   <div class="scan-row">
-    <button class="btn primary" data-act="scanPaper">📷 Bill giấy</button>
-    <button class="btn primary alt" data-act="scanScreens">📱 Đơn online</button>
+    <button class="btn primary" data-act="scanCamera">📷 Chụp bill</button>
+    <button class="btn primary alt" data-act="scanLibrary">🖼️ Chọn ảnh</button>
     <button class="btn" data-act="priceBook">🏷️ Giá từng món</button>
     <button class="btn" data-act="shopDir">📒 Nơi mua</button>
   </div>
@@ -1384,11 +1384,11 @@ function expenseShops() {
 // ---------- Quét hóa đơn (đọc chữ ngay trên máy; mã từ sakutara/chia-tien, xem tools/ocr) ----------
 let scanAbort = null;
 
-/** mode: camera (chụp bill giấy) · paper (chọn ảnh bill giấy) · screens (ảnh chụp màn hình app, chọn được nhiều ảnh) */
+/** mode: camera (chụp bill giấy) · library (chọn ảnh có sẵn, nhiều ảnh: bill giấy hay ảnh chụp màn hình app đều được, tự nhận) */
 let pickerInput = null;
 let ocrMod = null; // module bộ đọc chữ đã nạp (để giải phóng bộ nhớ trước khi mở camera)
 
-function startScan(mode = 'paper') {
+function startScan(mode = 'library') {
   // Mở camera tốn nhiều RAM: tắt bộ đọc chữ đang nằm chờ (~300 MB) để iOS không đóng app
   ocrMod?.terminateOcrWorker();
   // Ô chọn ảnh phải nằm trong trang: ô tạm không gắn vào trang có thể bị iOS dọn mất khi đang chụp → không nhận ảnh
@@ -1397,7 +1397,7 @@ function startScan(mode = 'paper') {
   input.type = 'file';
   input.accept = 'image/*';
   if (mode === 'camera') input.capture = 'environment';
-  if (mode === 'screens') input.multiple = true;
+  if (mode !== 'camera') input.multiple = true;
   input.className = 'picker-input';
   input.setAttribute('aria-hidden', 'true');
   document.body.append(input);
@@ -1410,7 +1410,7 @@ function startScan(mode = 'paper') {
   input.addEventListener('change', () => {
     const files = [...input.files].slice(0, 6);
     done();
-    if (files.length) runScan(files, mode === 'screens');
+    if (files.length) runScan(files, mode === 'camera' ? false : 'auto');
   });
   input.addEventListener('cancel', done);
   // nếu iOS đóng app khi đang mở camera, lần mở lại sẽ biết để báo
@@ -1423,9 +1423,8 @@ function startScan(mode = 'paper') {
 function scanMenu() {
   openSheet(`<div class="detail scan-menu">
     <h3>Ghi khoản chi từ ảnh</h3>
-    <button class="scan-choice" data-act="scanCamera"><span class="big">📷</span><span><b>Chụp bill giấy</b><small>Siêu thị, chợ, nhà hàng, cửa hàng</small></span></button>
-    <button class="scan-choice" data-act="scanScreens"><span class="big">📱</span><span><b>Ảnh chụp màn hình</b><small>Đơn Shopee, Lazada, TikTok Shop, ShopeeFood, Grab · biên lai MoMo, ZaloPay, ngân hàng. Đơn dài chọn được nhiều ảnh.</small></span></button>
-    <button class="scan-choice" data-act="scanPaper"><span class="big">🖼️</span><span><b>Ảnh bill có sẵn</b><small>Chọn ảnh bill giấy trong thư viện</small></span></button>
+    <button class="scan-choice" data-act="scanCamera"><span class="big">📷</span><span><b>Chụp bill</b><small>Mở camera chụp bill giấy: siêu thị, chợ, quán, cửa hàng</small></span></button>
+    <button class="scan-choice" data-act="scanLibrary"><span class="big">🖼️</span><span><b>Chọn ảnh có sẵn</b><small>Ảnh bill đã chụp, hoặc ảnh chụp màn hình đơn Shopee, Lazada, TikTok, Grab, biên lai MoMo, ngân hàng. Đơn dài chọn được nhiều ảnh — app tự nhận loại ảnh.</small></span></button>
     ${localStorage.getItem('sonha:ocrReady') ? '' : '<div class="hint">Lần quét đầu sẽ tải bộ đọc chữ khoảng 110 MB, nên dùng Wi-Fi. Từ lần sau quét không cần mạng.</div>'}
   </div>`);
 }
@@ -1433,7 +1432,7 @@ function scanMenu() {
 async function runScan(files, screenshot = false) {
   const ctrl = new AbortController();
   openSheet(`<div class="detail scan-sheet">
-    <h3>${screenshot ? '📱 Đang đọc ảnh đơn hàng' : '📷 Đang đọc hóa đơn'}</h3>
+    <h3>📷 Đang đọc ${files.length > 1 ? `${files.length} ảnh` : 'hóa đơn'}</h3>
     <div class="scan-prog"><i></i></div>
     <div class="hint" data-scan-stage>Đang tải phần mềm đọc chữ…</div>
     <div class="hint">${localStorage.getItem('sonha:ocrReady') ? `Thường mất 10–40 giây${files.length > 1 ? ' mỗi ảnh' : ''}.` : 'Lần đầu phải tải bộ đọc chữ khoảng 110 MB, nên dùng Wi-Fi.'} Ảnh chỉ xử lý trên máy này, không gửi đi đâu.</div>
@@ -1544,7 +1543,7 @@ async function checkInterruptedScan() {
   if (meta && Date.now() - meta.at < 30 * 60000 && typeof caches !== 'undefined') {
     const files = await loadPending(meta).catch(() => []);
     if (files.length) {
-      resumeFiles = { files, screenshot: !!meta.screenshot };
+      resumeFiles = { files, screenshot: meta.screenshot ?? 'auto' };
       const url = URL.createObjectURL(files[0]);
       openSheet(`<div class="detail scan-sheet">
         <h3>📷 Bill chưa quét xong</h3>
@@ -1562,8 +1561,7 @@ async function checkInterruptedScan() {
       <h3>App vừa bị đóng khi mở camera?</h3>
       <div class="hint">iPhone đôi khi tự đóng app web lúc mở camera nếu máy thiếu bộ nhớ. Đóng bớt app chạy nền rồi thử lại. Cách chắc ăn nhất: chụp bill bằng app Camera trước, rồi chọn ảnh trong thư viện.</div>
       <button class="scan-choice" data-act="scanCamera"><span class="big">📷</span><span><b>Chụp lại</b><small>Mở camera</small></span></button>
-      <button class="scan-choice" data-act="scanPaper"><span class="big">🖼️</span><span><b>Chọn ảnh bill trong thư viện</b><small>Ít tốn bộ nhớ hơn</small></span></button>
-      <button class="scan-choice" data-act="scanScreens"><span class="big">📱</span><span><b>Ảnh chụp màn hình</b><small>Shopee, MoMo, ngân hàng…</small></span></button>
+      <button class="scan-choice" data-act="scanLibrary"><span class="big">🖼️</span><span><b>Chọn ảnh có sẵn</b><small>Ảnh bill hoặc ảnh chụp màn hình · ít tốn bộ nhớ hơn</small></span></button>
     </div>`);
   }
 }
@@ -1784,12 +1782,13 @@ const actions = {
   followUp: (d) => followUp(S.get('expense', d.id)),
   scanMenu: () => scanMenu(),
   scanCamera: () => startScan('camera'),
-  scanPaper: () => startScan('paper'),
-  scanScreens: () => startScan('screens'),
+  scanLibrary: () => startScan('library'),
+  scanPaper: () => startScan('library'),
+  scanScreens: () => startScan('library'),
   scanRetry: () => lastScan && runScan(lastScan.files, lastScan.screenshot),
   scanManual: () => {
     clearPending();
-    expenseForm({ category: lastScan?.screenshot ? 'online' : 'grocery' });
+    expenseForm({ category: lastScan?.screenshot === true ? 'online' : 'grocery' });
   },
   scanResume: () => resumeFiles && runScan(resumeFiles.files, resumeFiles.screenshot),
   scanDiscard: () => {

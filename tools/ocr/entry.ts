@@ -186,7 +186,7 @@ const tick = () => new Promise<void>((r) => setTimeout(r, 30))
  * Thu nhỏ ảnh chụp lớn (iPhone 12–48 MP) về cạnh dài `maxEdge` bằng <img> + canvas.
  * Ảnh <img> tự xoay theo EXIF trên mọi trình duyệt; tránh tuỳ chọn resize của createImageBitmap mà Safari bỏ qua.
  */
-async function shrinkImage(file: Blob, maxEdge = 2800): Promise<Blob> {
+async function shrinkImage(file: Blob, maxEdge = 2800): Promise<{ blob: Blob; width: number; height: number }> {
   const url = URL.createObjectURL(file)
   try {
     const img = new Image()
@@ -197,7 +197,7 @@ async function shrinkImage(file: Blob, maxEdge = 2800): Promise<Blob> {
     const h = img.naturalHeight
     const long = Math.max(w, h)
     if (!w || !h) throw new Error('ảnh rỗng')
-    if (long <= maxEdge && file.type !== 'image/heic' && file.type !== 'image/heif') return file
+    if (long <= maxEdge && file.type !== 'image/heic' && file.type !== 'image/heif') return { blob: file, width: w, height: h }
     const scale = Math.min(1, maxEdge / long)
     const canvas = document.createElement('canvas')
     canvas.width = Math.round(w * scale)
@@ -209,7 +209,7 @@ async function shrinkImage(file: Blob, maxEdge = 2800): Promise<Blob> {
     const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.92))
     canvas.width = canvas.height = 0
     if (!blob) throw new Error('không mã hoá được ảnh')
-    return blob
+    return { blob, width: w, height: h }
   } finally {
     URL.revokeObjectURL(url)
   }
@@ -223,12 +223,22 @@ function stepError(step: string, err: unknown): Error & { code: string; detail: 
 }
 
 /**
+ * Ảnh chụp màn hình điện thoại: PNG, hoặc khung dài hơn 1,9 lần (màn hình ~19,5:9; ảnh camera 4:3 hoặc 16:9).
+ * Ảnh bill đã tự cắt sát trong app Ảnh cũng dài như vậy, khi đó cũng không cần cắt thêm.
+ */
+export function looksLikeScreenshot(type: string, width: number, height: number): boolean {
+  const ratio = Math.max(width, height) / Math.max(1, Math.min(width, height))
+  return type === 'image/png' || ratio >= 1.9
+}
+
+/**
  * Ảnh → thu nhỏ → (cắt/nắn nếu là bill giấy) → VietOCR → ghép dòng → phân tích → đối chiếu tổng.
- * `screenshot: true`: ảnh chụp màn hình app, không cắt; nhiều ảnh được ghép thành một đơn.
+ * `screenshot`: true = ảnh chụp màn hình app (không cắt) · false = ảnh chụp bill giấy (cắt, nắn)
+ * · 'auto' (mặc định) = tự nhận theo từng ảnh. Nhiều ảnh được ghép thành một đơn.
  */
 export async function scanReceipt(
   input: File | File[],
-  options: { onProgress?: OcrProgressHandler; signal?: AbortSignal; screenshot?: boolean } = {},
+  options: { onProgress?: OcrProgressHandler; signal?: AbortSignal; screenshot?: boolean | 'auto' } = {},
 ): Promise<ScanResult> {
   const files = Array.isArray(input) ? input : [input]
   const { onProgress } = options
@@ -239,13 +249,17 @@ export async function scanReceipt(
     onProgress?.(0, `Đang mở ảnh${label}…`)
     await tick()
     let img: Blob
+    let isScreen: boolean
     try {
-      img = await shrinkImage(files[i])
+      const shrunk = await shrinkImage(files[i])
+      img = shrunk.blob
+      const mode = options.screenshot ?? 'auto'
+      isScreen = mode === 'auto' ? looksLikeScreenshot(files[i].type, shrunk.width, shrunk.height) : mode
     } catch (err) {
       throw stepError('mở ảnh', err)
     }
     if (options.signal?.aborted) throw Object.assign(new Error('Đã huỷ'), { code: 'OCR_CANCELLED' })
-    if (!options.screenshot) {
+    if (!isScreen) {
       onProgress?.(0, `Đang cắt và nắn ảnh${label}…`)
       await tick()
       const asFile = new File([img], files[i].name.replace(/\.[^.]+$/, '') + '.jpg', { type: img.type || 'image/jpeg' })
