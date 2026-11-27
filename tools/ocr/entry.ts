@@ -49,6 +49,8 @@ export interface ReceiptSummary {
   vat: number
   /** OK: khớp tổng · CORRECTED: đã tự sửa số · MISMATCH: lệch, cần sửa tay · UNVERIFIED: bill không có dòng tổng */
   status: ReceiptCheck['status']
+  /** Đơn app chỉ hiện Thành tiền, ẩn chi tiết voucher / phí ship */
+  hiddenBreakdown?: boolean
   notes: string[]
 }
 
@@ -84,6 +86,7 @@ export function summarizeApp(a: AppReceipt): ReceiptSummary {
     paymentMethod: a.paymentMethod,
     content: a.content,
     status: a.status,
+    hiddenBreakdown: !!a.hiddenBreakdown,
     notes: a.notes,
   }
 }

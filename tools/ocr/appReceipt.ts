@@ -38,6 +38,8 @@ export interface AppReceipt {
   /** Nội dung chuyển khoản / dịch vụ. */
   content: string | null
   status: 'OK' | 'CORRECTED' | 'MISMATCH' | 'UNVERIFIED'
+  /** App chỉ hiện Thành tiền (Shopee thu gọn chi tiết) */
+  hiddenBreakdown?: boolean
   notes: string[]
 }
 
@@ -52,7 +54,7 @@ const SOURCES: Array<{ id: AppSource; name: string; kind: AppKind; re: RegExp }>
   { id: 'shopeefood', name: 'ShopeeFood', kind: 'order', re: /shopee ?food/ },
   { id: 'grab', name: 'Grab', kind: 'order', re: /\bgrab ?(food|mart|express)?\b/ },
   { id: 'be', name: 'be', kind: 'order', re: /\bbe ?(food|mart)\b/ },
-  { id: 'shopee', name: 'Shopee', kind: 'order', re: /shopee(?!pay| ?food)|phan loai hang|xem shop|shopee xu/ },
+  { id: 'shopee', name: 'Shopee', kind: 'order', re: /shopee(?!pay| ?food)|phan loai hang|xem shop|shopee xu|yeu thich\+?\s+\S|sao chep|tra hang\/hoan tien|gui yeu cau tra hang/ },
   { id: 'lazada', name: 'Lazada', kind: 'order', re: /lazada|lazmall|laz ?pay/ },
   { id: 'tiktok', name: 'TikTok Shop', kind: 'order', re: /tik ?tok/ },
   { id: 'tiki', name: 'Tiki', kind: 'order', re: /\btiki\b|tikinow/ },
@@ -115,6 +117,43 @@ function moneyTokens(line: string, prefixCurrency: boolean): MoneyToken[] {
     out.push({ values, negative: !!minus, sure: !!(pre || post || grouped), index: m.index ?? 0 })
   }
   return out
+}
+
+/**
+ * Tách dòng giá bị dính: "1.257.644đ754.587đ" có thể đọc thành "1.257.6442774.5874" (đ → 2, 4, d).
+ * Tìm cách chia chuỗi thành các số tiền đúng dạng nghìn, xen giữa là ký tự tiền tệ bị đọc sai.
+ */
+export function splitGlued(line: string): number[] | null {
+  const str = fold(line).replace(/\s+/g, '').replace(/vnd/g, '')
+  if (!/^[\d.,đd₫\-–]+$/.test(str)) return null
+  const memo = new Map<number, { amounts: number[]; junk: number } | null>()
+  const go = (i: number): { amounts: number[]; junk: number } | null => {
+    if (i === str.length) return { amounts: [], junk: 0 }
+    if (memo.has(i)) return memo.get(i)!
+    let best: { amounts: number[]; junk: number } | null = null
+    const consider = (r: { amounts: number[]; junk: number } | null) => {
+      if (r && (!best || r.amounts.length > best.amounts.length || (r.amounts.length === best.amounts.length && r.junk < best.junk))) best = r
+    }
+    // số tiền đúng dạng: 1–3 chữ số rồi các nhóm .ddd
+    const m = /^\d{1,3}(?:[.,]\d{3})+/.exec(str.slice(i))
+    if (m) {
+      for (let k = m[0].length; k >= 5; k -= 4) {
+        const piece = str.slice(i, i + k)
+        if (!/^\d{1,3}(?:[.,]\d{3})+$/.test(piece)) continue
+        const rest = go(i + k)
+        if (rest) consider({ amounts: [toNumber(piece), ...rest.amounts], junk: rest.junk })
+      }
+    }
+    // ký tự tiền tệ đọc sai / dấu trừ
+    if (/[đd₫24\-–]/.test(str[i])) {
+      const rest = go(i + 1)
+      if (rest) consider({ amounts: rest.amounts, junk: rest.junk + 1 })
+    }
+    memo.set(i, best)
+    return best
+  }
+  const r = go(0)
+  return r && r.amounts.length ? r.amounts : null
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -192,6 +231,8 @@ const L_DATE = /thoi gian dat hang|ngay dat hang|dat hang (luc|ngay)|thoi gian t
 const L_METHOD = /phuong thuc thanh toan|hinh thuc thanh toan|thanh toan bang/
 const QTY_SUFFIX = /(?:^|\s)[xX×]\s?(\d{1,3})\b|(?:so luong|sl)\s*:?\s*(\d{1,3})\b/
 const QTY_PREFIX = /^(\d{1,2})\s?[xX×]\s+(.+)$/
+/** Dòng tên shop: huy hiệu Shopee/Lazada đứng đầu, hoặc tên có Store/Shop/Official/Mall. */
+const SHOP_LINE = /^(yeu thich\+?|mall|lazmall|choice|preferred|shopee mall)\s+\S|\b(official|store|flagship)\b|\bshop\s*$/
 const NOT_NAME =
   /^(\d{1,2}:\d{2}|9:41)|don hang|da hoan thanh|^(da|dang|cho) (giao|nhan|huy|xac nhan|xu ly|lay hang)|giao hang thanh cong|cam on|dia chi|nhan hang|thong tin|van chuyen|xem shop|chat|lien he|tro giup|mua lai|danh gia|doi tra|tra hang|hoan tien|yeu cau|xem chi tiet|\(\+?84\)|^\+?84|\b0\d{9}\b|\d{3} \d{3} \d{3}|phuong |quan |huyen |tp\.|thanh pho|tinh |ward|district/
 
@@ -202,6 +243,14 @@ interface RawItem {
   money: MoneyToken
   lineTotal: boolean
   line: number
+}
+
+/** Dòng chỉ có số: "giá gốc + giá bán" dính nhau, hoặc giá có ký hiệu đ dính đuôi ("754.5874") → lấy giá bán (số cuối). */
+function gluedToken(line: string, prefix: boolean): MoneyToken | null {
+  const parts = splitGlued(line)
+  if (!parts) return null
+  if (parts.length < 2 && moneyTokens(line, prefix).length) return null
+  return { values: [parts[parts.length - 1]], negative: false, sure: true, index: 0 }
 }
 
 function cleanName(s: string): string {
@@ -236,10 +285,14 @@ function parseOrder(lines: string[], src: { source: AppSource; name: string }): 
   for (let i = 0; i < lines.length; i++) {
     const f = folded[i]
     if (!merchant && /xem shop|\bchat\b/.test(f)) merchant = cleanName(lines[i].replace(/xem shop|chat ngay|\bchat\b|>/gi, '')) || null
+    if (!merchant && SHOP_LINE.test(f) && !moneyTokens(lines[i], false).length) merchant = cleanName(lines[i].replace(/[>›]/g, '')) || null
     if (!orderId && L_ORDER_ID.test(f)) {
-      const after = valueAfter(lines[i], L_ORDER_ID) || lines[i + 1] || ''
-      const id = /([A-Z0-9]{8,24})/.exec(after.toUpperCase().replace(/\s+/g, ''))
-      if (id) orderId = id[1]
+      const after = (valueAfter(lines[i], L_ORDER_ID) || lines[i + 1] || '').replace(/sao ch[ée]p|copy/gi, ' ')
+      const id = after
+        .toUpperCase()
+        .split(/\s+/)
+        .find((w) => /^[A-Z0-9]{8,24}$/.test(w) && /\d/.test(w))
+      if (id) orderId = id
     }
     if (!method && L_METHOD.test(f)) method = valueAfter(lines[i], L_METHOD) || (lines[i + 1] && !moneyTokens(lines[i + 1], prefix).length ? lines[i + 1].trim() : null)
     if (L_DATE.test(f)) when = findDate(lines[i]) || (lines[i + 1] ? findDate(lines[i + 1]) : null) || when
@@ -299,10 +352,14 @@ function parseOrder(lines: string[], src: { source: AppSource; name: string }): 
     if (qm && (nameBuf.length || /phan loai/.test(f))) {
       const qty = Number(qm[1] || qm[2])
       if (/phan loai|bien the/.test(f)) variant = variantOf(line)
+      else if (!variant) {
+        const before = line.slice(0, qm.index).trim()
+        if (before && /[A-Za-zÀ-ỹ]/.test(before) && before.length <= 40 && !moneyTokens(before, prefix).length) variant = before
+      }
       // giá: cùng dòng, dòng sau (dòng chỉ có số), hoặc dòng trước
       let tk = tokens.filter((t) => t.index > (qm.index ?? 0)).pop() || null
       if (!tk && lines[i + 1] && !/[a-z]{3,}/.test(folded[i + 1].replace(/vnd/g, ''))) {
-        tk = moneyTokens(lines[i + 1], prefix).pop() || null
+        tk = gluedToken(lines[i + 1], prefix) || moneyTokens(lines[i + 1], prefix).pop() || null
         if (tk) used.add(i + 1)
       }
       if (!tk && tokens.length) tk = tokens[tokens.length - 1]
@@ -321,7 +378,7 @@ function parseOrder(lines: string[], src: { source: AppSource; name: string }): 
       variant = variantOf(line)
       continue
     }
-    if (NOT_NAME.test(f) || (merchant && line.includes(merchant))) {
+    if (NOT_NAME.test(f) || (merchant && cleanName(line.replace(/[>›]/g, '')) === merchant) || (merchant && line.includes(merchant))) {
       nameBuf = []
       continue
     }
@@ -332,6 +389,7 @@ function parseOrder(lines: string[], src: { source: AppSource; name: string }): 
       nameBuf.push(line.trim())
       if (nameBuf.length > 3) nameBuf.shift()
     } else if (tokens.length && nameBuf.length) pending = tokens[tokens.length - 1]
+    else if (!tokens.length && nameBuf.length && gluedToken(line, prefix)) pending = gluedToken(line, prefix)
     else if (!tokens.length) nameBuf = []
   }
 
@@ -340,9 +398,17 @@ function parseOrder(lines: string[], src: { source: AppSource; name: string }): 
   const finalItems: AppItem[] = items.map((it, k) => {
     const v = pick.items[k]
     const amount = it.lineTotal ? v : v * it.qty
-    return { name: it.name, quantity: it.qty, unitPrice: it.lineTotal ? Math.round(v / it.qty) : v, amount, check: v !== it.money.values[0] || (pick.status !== 'OK' && it.money.values.length > 1) }
+    return { name: it.name, quantity: it.qty, unitPrice: it.lineTotal ? Math.round(v / it.qty) : v, amount, check: pick.hidden ? items.length > 1 : v !== it.money.values[0] || (pick.status !== 'OK' && it.money.values.length > 1) }
   })
-  if (pick.status === 'OK') notes.push(`Đã đối chiếu: ${pick.explain}.`)
+  if (pick.hidden) {
+    const fmt = (n: number) => new Intl.NumberFormat('vi-VN').format(n)
+    if (items.length === 1) {
+      notes.push(`${src.name} ẩn chi tiết voucher/phí ship, nên giá món lấy theo số tiền thực trả ${fmt(pick.total!)}.`)
+      if (pick.hidden.listed[0] && pick.hidden.listed[0] !== pick.total) notes.push(`Giá bán trên đơn đọc được khoảng ${fmt(pick.hidden.listed[0])} (có thể sai vài số).`)
+    } else {
+      notes.push(`${src.name} ẩn chi tiết: các món cộng lại ${fmt(pick.subtotal!)}, thực trả ${fmt(pick.total!)}${pick.hidden.gap > 0 ? ` → coi ${fmt(pick.hidden.gap)} là voucher/giảm giá` : pick.hidden.gap < 0 ? ` → coi ${fmt(-pick.hidden.gap)} là phí ship/phí` : ''}. Giá từng món có thể sai vài số, xem lại.`)
+    }
+  } else if (pick.status === 'OK') notes.push(`Đã đối chiếu: ${pick.explain}.`)
   else if (pick.status === 'MISMATCH') notes.push(`Chưa khớp: ${pick.explain}. Kiểm tra lại các số trong ảnh.`)
   else notes.push('Ảnh không có đủ dòng tổng để đối chiếu, kiểm tra lại số tiền.')
   if (pick.corrected) notes.push('Đã sửa vài số tiền có ký hiệu ₫ bị đọc thành số (4 hoặc 2).')
@@ -363,11 +429,14 @@ function parseOrder(lines: string[], src: { source: AppSource; name: string }): 
     paymentMethod: method,
     content: null,
     status: pick.status === 'OK' && pick.corrected ? 'CORRECTED' : pick.status,
+    hiddenBreakdown: !!pick.hidden,
     notes,
   }
 }
 
 interface OrderPick {
+  /** App chỉ hiện "Thành tiền" (ẩn tiền hàng, phí ship, voucher): đã suy ra phần chênh. */
+  hidden?: { listed: number[]; gap: number }
   items: number[]
   total: number | null
   subtotal: number | null
@@ -441,6 +510,36 @@ function solveOrder(items: RawItem[], summary: SummaryLine[]): OrderPick {
   const itemSum = items.reduce((s, it, j) => s + (it.lineTotal ? itemVals[j] : itemVals[j] * it.qty), 0)
   const corrected = idx.some((x) => x > 0)
   const fmt = (n: number) => new Intl.NumberFormat('vi-VN').format(n)
+  // Shopee thu gọn: chỉ có "Thành tiền" (đã trừ voucher, cộng ship) mà không có dòng chi tiết
+  if (!best?.ok && total != null && !subLine && !adds.length && !minus.length && items.length) {
+    const gap = itemSum - total
+    if (items.length === 1) {
+      const it = items[0]
+      const paid = it.lineTotal ? total : total / it.qty
+      return {
+        hidden: { listed: [itemVals[0]], gap },
+        items: [Number.isInteger(paid) ? paid : total],
+        total,
+        subtotal: total,
+        fee: 0,
+        discount: 0,
+        status: 'OK',
+        corrected: false,
+        explain: `ảnh chỉ có Thành tiền ${fmt(total)}`,
+      }
+    }
+    return {
+      hidden: { listed: itemVals, gap },
+      items: itemVals,
+      total,
+      subtotal: itemSum,
+      fee: gap < 0 ? -gap : 0,
+      discount: gap > 0 ? gap : 0,
+      status: 'OK',
+      corrected: false,
+      explain: `các món ${fmt(itemSum)}, Thành tiền ${fmt(total)}`,
+    }
+  }
   const parts = [`tiền hàng ${fmt(subtotal ?? itemSum)}`]
   if (fee) parts.push(`+ phí ${fmt(fee)}`)
   if (discount) parts.push(`− giảm ${fmt(discount)}`)

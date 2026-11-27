@@ -13,7 +13,7 @@ const CATS = [
   { id: 'spirit', name: 'Cúng giỗ', icon: '🪔' },
   { id: 'other', name: 'Khác', icon: '📌' },
 ];
-const APP_VERSION = 'v1.15';
+const APP_VERSION = 'v1.16';
 
 const EXP_CATS = [
   { id: 'grocery', name: 'Đi chợ & siêu thị', icon: '🛒' },
@@ -1424,7 +1424,7 @@ function scanMenu() {
   openSheet(`<div class="detail scan-menu">
     <h3>Ghi khoản chi từ ảnh</h3>
     <button class="scan-choice" data-act="scanCamera"><span class="big">📷</span><span><b>Chụp bill</b><small>Mở camera chụp bill giấy: siêu thị, chợ, quán, cửa hàng</small></span></button>
-    <button class="scan-choice" data-act="scanLibrary"><span class="big">🖼️</span><span><b>Chọn ảnh có sẵn</b><small>Ảnh bill đã chụp, hoặc ảnh chụp màn hình đơn Shopee, Lazada, TikTok, Grab, biên lai MoMo, ngân hàng. Đơn dài chọn được nhiều ảnh — app tự nhận loại ảnh.</small></span></button>
+    <button class="scan-choice" data-act="scanLibrary"><span class="big">🖼️</span><span><b>Chọn ảnh có sẵn</b><small>Ảnh bill đã chụp, hoặc ảnh chụp màn hình đơn Shopee, Lazada, TikTok, Grab, biên lai MoMo, ngân hàng. Đơn dài chọn được nhiều ảnh. iPhone sẽ hỏi thêm: bấm <b class="inline">Thư viện ảnh</b>.</small></span></button>
     ${localStorage.getItem('sonha:ocrReady') ? '' : '<div class="hint">Lần quét đầu sẽ tải bộ đọc chữ khoảng 110 MB, nên dùng Wi-Fi. Từ lần sau quét không cần mạng.</div>'}
   </div>`);
 }
@@ -1646,7 +1646,9 @@ function scanNote(s) {
     msg = s.kind === 'order' && s.total ? `ℹ️ Đơn ${s.sourceName}: ${money(s.total)}, chưa đọc được từng món — thêm tay nếu cần.` : '⚠️ Chưa đọc được món nào — nhập tay hoặc chụp lại rõ hơn.';
   } else {
     const what = s.kind === 'order' ? `Đơn ${s.sourceName}: ${n} món` : `Đọc được ${n} món`;
-    msg = {
+    msg = s.hiddenBreakdown
+      ? `✓ ${what}, thực trả ${money(s.total)}. ${s.sourceName} ẩn chi tiết voucher nên ${n > 1 ? 'giá từng món cần xem lại (tô vàng)' : 'giá món lấy theo số tiền thực trả'}.`
+      : {
       OK: `✓ ${what}, tổng khớp${s.kind === 'order' ? ' (tiền hàng + phí − giảm giá)' : ' hóa đơn'}. Xem lại rồi bấm Lưu.`,
       CORRECTED: s.kind === 'order' ? `✓ ${what}, tổng khớp sau khi sửa vài số có ký hiệu ₫ bị đọc nhầm. Xem lại rồi bấm Lưu.` : `✓ ${what}, đã tự sửa vài số cho khớp tổng — xem lại dòng tô vàng.`,
       MISMATCH: `⚠️ ${what} nhưng tổng chưa khớp — so với ảnh và sửa dòng tô vàng.`,
