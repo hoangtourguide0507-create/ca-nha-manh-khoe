@@ -261,12 +261,21 @@ interface RawItem {
   line: number
 }
 
-/** Dòng chỉ có số: "giá gốc + giá bán" dính nhau, hoặc giá có ký hiệu đ dính đuôi ("754.5874") → lấy giá bán (số cuối). */
-function gluedToken(line: string, prefix: boolean): MoneyToken | null {
+/** Mọi số tiền trên một dòng giá (kể cả khi giá gạch và giá bán dính nhau). */
+function priceTokensOf(line: string, prefix: boolean): MoneyToken[] {
   const parts = splitGlued(line)
-  if (!parts) return null
-  if (parts.length < 2 && moneyTokens(line, prefix).length) return null
-  return { values: [parts[parts.length - 1]], negative: false, sure: true, index: 0 }
+  if (parts && parts.length >= 2) return parts.map((v, i) => ({ values: [v], negative: false, sure: true, index: i }))
+  return moneyTokens(line, prefix)
+}
+
+/**
+ * Giá bán của một món khi có nhiều giá: giá gạch ngang là giá gốc chưa giảm, luôn cao hơn giá bán,
+ * nên lấy giá thấp nhất và bỏ giá gạch (không cộng vào đâu cả).
+ */
+function salePrice(tokens: MoneyToken[]): MoneyToken | null {
+  const real = tokens.filter((t) => t.values[0] > 0)
+  if (!real.length) return null
+  return real.reduce((a, b) => (b.values[0] < a.values[0] ? b : a))
 }
 
 function cleanName(s: string): string {
@@ -373,11 +382,17 @@ function parseOrder(lines: string[], src: { source: AppSource; name: string }): 
         if (before && /[A-Za-zÀ-ỹ]/.test(before) && before.length <= 40 && !moneyTokens(before, prefix).length) variant = before
       }
       // giá: cùng dòng, dòng sau (dòng chỉ có số), hoặc dòng trước
-      let tk = tokens.filter((t) => t.index > (qm.index ?? 0)).pop() || null
-      if (!tk && lines[i + 1] && !/[a-z]{3,}/.test(folded[i + 1].replace(/vnd/g, ''))) {
-        tk = gluedToken(lines[i + 1], prefix) || moneyTokens(lines[i + 1], prefix).pop() || null
-        if (tk) used.add(i + 1)
+      // gom mọi giá của món: sau "x1" trên cùng dòng + tối đa 2 dòng chỉ có số ngay sau (giá gạch và giá bán có thể tách 2 dòng)
+      const cand = tokens.filter((t) => t.index > (qm.index ?? 0))
+      for (let j = i + 1; j <= i + 2 && j < lines.length; j++) {
+        if (/[a-z]{3,}/.test(folded[j].replace(/vnd/g, ''))) break
+        const ts = priceTokensOf(lines[j], prefix)
+        if (!ts.length) break
+        cand.push(...ts)
+        used.add(j)
       }
+      if (pending && !cand.length) cand.push(pending)
+      let tk = salePrice(cand)
       if (!tk && tokens.length) tk = tokens[tokens.length - 1]
       if (!tk) tk = pending
       // Shopee: giá món đọc không ra vẫn ghi món (số tiền lấy theo Thành tiền)
@@ -414,8 +429,10 @@ function parseOrder(lines: string[], src: { source: AppSource; name: string }): 
       pending = null
       nameBuf.push(line.trim())
       if (nameBuf.length > 3) nameBuf.shift()
-    } else if (tokens.length && nameBuf.length) pending = tokens[tokens.length - 1]
-    else if (!tokens.length && nameBuf.length && gluedToken(line, prefix)) pending = gluedToken(line, prefix)
+    } else if (nameBuf.length && !/[a-z]{3,}/.test(f.replace(/vnd/g, '')) && priceTokensOf(line, prefix).length) {
+      // giá đứng trước "x1" (Lazada): gom các dòng giá, giữ giá bán (thấp nhất)
+      pending = salePrice([...(pending ? [pending] : []), ...priceTokensOf(line, prefix)])
+    }
     else if (!tokens.length) nameBuf = []
   }
 
