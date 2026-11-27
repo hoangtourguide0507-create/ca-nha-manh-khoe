@@ -110,7 +110,7 @@ function moneyTokens(line: string, prefixCurrency: boolean): MoneyToken[] {
     if (value < 1000) continue
     const values = [value]
     // ₫ (VietOCR không có ký tự này) hay bị đọc thành số 4 hoặc 2 dính trước số tiền
-    if (prefixCurrency && !pre && /^[24]\d/.test(digits)) {
+    if (prefixCurrency && !pre && !post && /^[24]\d/.test(digits)) {
       const stripped = digits.slice(1).replace(/^[.,]/, '')
       if (/^\d{1,3}([.,]\d{3})+$/.test(stripped) || /^\d{4,}$/.test(stripped)) values.push(toNumber(stripped))
     }
@@ -418,19 +418,30 @@ function parseOrder(lines: string[], src: { source: AppSource; name: string }): 
   }
 
   // --- đối chiếu
-  const pick = solveOrder(items, summary)
+  // Shopee: số tiền khoản chi chỉ lấy ở dòng "Thành tiền" (dòng cuối cùng nếu có nhiều)
+  let thanhTien: number | null = null
+  if (src.source === 'shopee') {
+    for (let i = 0; i < lines.length; i++) {
+      if (!/thanh tien/.test(folded[i])) continue
+      let tk = moneyTokens(lines[i], prefix).pop()
+      if (!tk && lines[i + 1] && !/[a-z]{3,}/.test(folded[i + 1])) tk = moneyTokens(lines[i + 1], prefix).pop()
+      if (tk) thanhTien = tk.values[0]
+    }
+  }
+  const pick = solveOrder(items, summary, thanhTien)
   const finalItems: AppItem[] = items.map((it, k) => {
     const v = pick.items[k]
-    const amount = it.lineTotal ? v : v * it.qty
-    return { name: it.name, quantity: it.qty, unitPrice: it.lineTotal ? Math.round(v / it.qty) : v, amount, check: pick.hidden ? items.length > 1 : v !== it.money.values[0] || (pick.status !== 'OK' && it.money.values.length > 1) }
+    const whole = it.lineTotal || !!pick.asLineTotal
+    const amount = whole ? v : v * it.qty
+    return { name: it.name, quantity: it.qty, unitPrice: whole ? Math.round(v / it.qty) : v, amount, check: pick.hidden ? items.length > 1 : v !== it.money.values[0] || (pick.status !== 'OK' && it.money.values.length > 1) }
   })
   if (pick.hidden) {
     const fmt = (n: number) => new Intl.NumberFormat('vi-VN').format(n)
     if (items.length === 1) {
-      notes.push(`${src.name} ẩn chi tiết voucher/phí ship, nên giá món lấy theo số tiền thực trả ${fmt(pick.total!)}.`)
+      notes.push(`Số tiền lấy theo dòng Thành tiền ${fmt(pick.total!)}; giá món = số tiền thực trả.`)
       if (pick.hidden.listed[0] && pick.hidden.listed[0] !== pick.total) notes.push(`Giá bán trên đơn đọc được khoảng ${fmt(pick.hidden.listed[0])} (có thể sai vài số).`)
     } else {
-      notes.push(`${src.name} ẩn chi tiết: các món cộng lại ${fmt(pick.subtotal!)}, thực trả ${fmt(pick.total!)}${pick.hidden.gap > 0 ? ` → coi ${fmt(pick.hidden.gap)} là voucher/giảm giá` : pick.hidden.gap < 0 ? ` → coi ${fmt(-pick.hidden.gap)} là phí ship/phí` : ''}. Giá từng món có thể sai vài số, xem lại.`)
+      notes.push(`Số tiền lấy theo dòng Thành tiền ${fmt(pick.total!)}; các món cộng lại ${fmt(pick.subtotal!)}${pick.hidden.gap > 0 ? ` → coi ${fmt(pick.hidden.gap)} là voucher/giảm giá` : pick.hidden.gap < 0 ? ` → coi ${fmt(-pick.hidden.gap)} là phí ship/phí` : ''}. Giá từng món có thể sai vài số, xem lại.`)
     }
   } else if (pick.status === 'OK') notes.push(`Đã đối chiếu: ${pick.explain}.`)
   else if (pick.status === 'MISMATCH') notes.push(`Chưa khớp: ${pick.explain}. Kiểm tra lại các số trong ảnh.`)
@@ -461,6 +472,8 @@ function parseOrder(lines: string[], src: { source: AppSource; name: string }): 
 interface OrderPick {
   /** App chỉ hiện "Thành tiền" (ẩn tiền hàng, phí ship, voucher): đã suy ra phần chênh. */
   hidden?: { listed: number[]; gap: number }
+  /** items[] là thành tiền cả dòng (không nhân SL) */
+  asLineTotal?: boolean
   items: number[]
   total: number | null
   subtotal: number | null
@@ -472,7 +485,7 @@ interface OrderPick {
 }
 
 /** Thử các cách hiểu số tiền (bỏ số 4 đầu = ₫) để khớp: Σmón = tiền hàng, tiền hàng + phí − giảm = tổng. */
-function solveOrder(items: RawItem[], summary: SummaryLine[]): OrderPick {
+function solveOrder(items: RawItem[], summary: SummaryLine[], fixedTotal: number | null = null): OrderPick {
   const totals = summary.filter((s) => s.role === 'total')
   const subs = summary.filter((s) => s.role === 'subtotal')
   // tổng cuối là dòng tổng nằm SAU các dòng phí/giảm giá (hoặc dòng tổng cuối cùng)
@@ -529,20 +542,25 @@ function solveOrder(items: RawItem[], summary: SummaryLine[]): OrderPick {
   const itemVals = items.map((it) => it.money.values[idx[k++]])
   const fee = adds.reduce((s) => s + vars[k].values[idx[k++]], 0)
   const discount = minus.reduce((s) => s + vars[k].values[idx[k++]], 0)
-  const total = totalLine ? vars[k].values[idx[k++]] : null
+  let total = totalLine ? vars[k].values[idx[k++]] : null
   const subtotal = subLine ? vars[k].values[idx[k++]] : null
   const itemSum = items.reduce((s, it, j) => s + (it.lineTotal ? itemVals[j] : itemVals[j] * it.qty), 0)
   const corrected = idx.some((x) => x > 0)
   const fmt = (n: number) => new Intl.NumberFormat('vi-VN').format(n)
+  // Shopee: số tiền luôn là dòng "Thành tiền"; không khớp được thì giữ Thành tiền và suy ra phần chênh
+  const forced = fixedTotal != null && (!best?.ok || total !== fixedTotal)
+  if (forced) total = fixedTotal
+  if (forced && !items.length) {
+    return { items: [], total, subtotal: null, fee: 0, discount: 0, status: 'OK', corrected: false, explain: `Thành tiền ${fmt(total!)}` }
+  }
   // Shopee thu gọn: chỉ có "Thành tiền" (đã trừ voucher, cộng ship) mà không có dòng chi tiết
-  if (!best?.ok && total != null && !subLine && !adds.length && !minus.length && items.length) {
+  if (total != null && items.length && (forced || (!best?.ok && !subLine && !adds.length && !minus.length))) {
     const gap = itemSum - total
     if (items.length === 1) {
-      const it = items[0]
-      const paid = it.lineTotal ? total : total / it.qty
       return {
         hidden: { listed: [itemVals[0]], gap },
-        items: [Number.isInteger(paid) ? paid : total],
+        asLineTotal: true,
+        items: [total],
         total,
         subtotal: total,
         fee: 0,

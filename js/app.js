@@ -13,7 +13,7 @@ const CATS = [
   { id: 'spirit', name: 'Cúng giỗ', icon: '🪔' },
   { id: 'other', name: 'Khác', icon: '📌' },
 ];
-const APP_VERSION = 'v1.17';
+const APP_VERSION = 'v1.18';
 
 const EXP_CATS = [
   { id: 'grocery', name: 'Đi chợ & siêu thị', icon: '🛒' },
@@ -1647,7 +1647,7 @@ function scanNote(s) {
   } else {
     const what = s.kind === 'order' ? `Đơn ${s.sourceName}: ${n} món` : `Đọc được ${n} món`;
     msg = s.hiddenBreakdown
-      ? `✓ ${what}, thực trả ${money(s.total)}. ${s.sourceName} ẩn chi tiết voucher nên ${n > 1 ? 'giá từng món cần xem lại (tô vàng)' : 'giá món lấy theo số tiền thực trả'}.`
+      ? `✓ ${what}, Thành tiền ${money(s.total)}.${n > 1 ? ' Giá từng món cần xem lại (tô vàng).' : ' Xem lại rồi bấm Lưu.'}`
       : {
       OK: `✓ ${what}, tổng khớp${s.kind === 'order' ? ' (tiền hàng + phí − giảm giá)' : ' hóa đơn'}. Xem lại rồi bấm Lưu.`,
       CORRECTED: s.kind === 'order' ? `✓ ${what}, tổng khớp sau khi sửa vài số có ký hiệu ₫ bị đọc nhầm. Xem lại rồi bấm Lưu.` : `✓ ${what}, đã tự sửa vài số cho khớp tổng — xem lại dòng tô vàng.`,
