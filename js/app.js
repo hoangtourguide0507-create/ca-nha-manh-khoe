@@ -13,7 +13,7 @@ const CATS = [
   { id: 'spirit', name: 'Cúng giỗ', icon: '🪔' },
   { id: 'other', name: 'Khác', icon: '📌' },
 ];
-const APP_VERSION = 'v1.13';
+const APP_VERSION = 'v1.14';
 
 const EXP_CATS = [
   { id: 'grocery', name: 'Đi chợ & siêu thị', icon: '🛒' },
@@ -1385,14 +1385,38 @@ function expenseShops() {
 let scanAbort = null;
 
 /** mode: camera (chụp bill giấy) · paper (chọn ảnh bill giấy) · screens (ảnh chụp màn hình app, chọn được nhiều ảnh) */
+let pickerInput = null;
+let ocrMod = null; // module bộ đọc chữ đã nạp (để giải phóng bộ nhớ trước khi mở camera)
+
 function startScan(mode = 'paper') {
-  if (!localStorage.getItem('sonha:ocrReady') && !confirm('Lần đầu quét cần tải bộ đọc chữ khoảng 110 MB (nên dùng Wi-Fi). Từ lần sau quét nhanh hơn và không cần mạng. Tiếp tục?')) return;
+  // Mở camera tốn nhiều RAM: tắt bộ đọc chữ đang nằm chờ (~300 MB) để iOS không đóng app
+  ocrMod?.terminateOcrWorker();
+  // Ô chọn ảnh phải nằm trong trang: ô tạm không gắn vào trang có thể bị iOS dọn mất khi đang chụp → không nhận ảnh
+  pickerInput?.remove();
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = 'image/*';
   if (mode === 'camera') input.capture = 'environment';
   if (mode === 'screens') input.multiple = true;
-  input.onchange = () => input.files.length && runScan([...input.files].slice(0, 6), mode === 'screens');
+  input.className = 'picker-input';
+  input.setAttribute('aria-hidden', 'true');
+  document.body.append(input);
+  pickerInput = input;
+  const done = () => {
+    localStorage.removeItem('sonha:picking');
+    input.remove();
+    if (pickerInput === input) pickerInput = null;
+  };
+  input.addEventListener('change', () => {
+    const files = [...input.files].slice(0, 6);
+    done();
+    if (files.length) runScan(files, mode === 'screens');
+  });
+  input.addEventListener('cancel', done);
+  // nếu iOS đóng app khi đang mở camera, lần mở lại sẽ biết để báo
+  localStorage.setItem('sonha:picking', String(Date.now()));
+  const back = () => setTimeout(() => pickerInput === input && !input.files.length && localStorage.removeItem('sonha:picking'), 2500);
+  window.addEventListener('focus', back, { once: true });
   input.click();
 }
 
@@ -1402,6 +1426,7 @@ function scanMenu() {
     <button class="scan-choice" data-act="scanCamera"><span class="big">📷</span><span><b>Chụp bill giấy</b><small>Siêu thị, chợ, nhà hàng, cửa hàng</small></span></button>
     <button class="scan-choice" data-act="scanScreens"><span class="big">📱</span><span><b>Ảnh chụp màn hình</b><small>Đơn Shopee, Lazada, TikTok Shop, ShopeeFood, Grab · biên lai MoMo, ZaloPay, ngân hàng. Đơn dài chọn được nhiều ảnh.</small></span></button>
     <button class="scan-choice" data-act="scanPaper"><span class="big">🖼️</span><span><b>Ảnh bill có sẵn</b><small>Chọn ảnh bill giấy trong thư viện</small></span></button>
+    ${localStorage.getItem('sonha:ocrReady') ? '' : '<div class="hint">Lần quét đầu sẽ tải bộ đọc chữ khoảng 110 MB, nên dùng Wi-Fi. Từ lần sau quét không cần mạng.</div>'}
   </div>`);
 }
 
@@ -1415,6 +1440,9 @@ async function runScan(files, screenshot = false) {
     <button class="btn" data-act="closeSheet">Hủy quét</button>
   </div>`);
   scanAbort = ctrl;
+  // ảnh chỉ cần giữ khi iOS đóng app giữa chừng; huỷ / lỗi / xong đều xoá
+  ctrl.signal.addEventListener('abort', clearPending);
+  await savePending(files, screenshot);
   // tự báo lỗi nếu một bước đứng yên quá lâu (mạng rớt, máy thiếu bộ nhớ…)
   let stage = 'tải phần mềm đọc chữ (ocr.js)';
   let lastTick = Date.now();
@@ -1435,6 +1463,7 @@ async function runScan(files, screenshot = false) {
   };
   try {
     const ocr = await import('./ocr/ocr.js');
+    ocrMod = ocr;
     if (ctrl.signal.aborted) throw new Error('aborted');
     progress(0, 'Đang mở ảnh…');
     const r = await ocr.scanReceipt(files, { screenshot, signal: ctrl.signal, onProgress: progress });
@@ -1442,6 +1471,7 @@ async function runScan(files, screenshot = false) {
     clearInterval(watchdog);
     scanAbort = null;
     localStorage.setItem('sonha:ocrReady', '1');
+    clearPending();
     expenseForm(scanToExpense(r.summary), r.summary);
   } catch (err) {
     clearInterval(watchdog);
@@ -1456,6 +1486,7 @@ async function runScan(files, screenshot = false) {
 }
 
 function scanFailed(files, screenshot, message, detail) {
+  clearPending();
   const ua = navigator.userAgent.match(/(iPhone|iPad|Android)[^;)]*|OS \d+_\d+|Version\/[\d.]+|Chrome\/\d+|Safari\/[\d.]+/g)?.join(' ') || '';
   openSheet(`<div class="detail scan-sheet">
     <h3>😿 ${esc(message)}</h3>
@@ -1468,6 +1499,74 @@ function scanFailed(files, screenshot, message, detail) {
 }
 
 let lastScan = null;
+
+// ---------- Giữ ảnh khi iPhone đóng app giữa chừng ----------
+const PENDING_CACHE = 'sonha-pending';
+let resumeFiles = null;
+
+async function savePending(files, screenshot) {
+  try {
+    const c = await caches.open(PENDING_CACHE);
+    await Promise.all(
+      files.map((f, i) => c.put(`./__pending/${i}`, new Response(f, { headers: { 'Content-Type': f.type || 'image/jpeg', 'X-Name': encodeURIComponent(f.name || `bill-${i}.jpg`) } })))
+    );
+    localStorage.setItem('sonha:pendingScan', JSON.stringify({ n: files.length, screenshot, at: Date.now() }));
+  } catch {
+    /* không lưu được thì thôi */
+  }
+}
+
+function clearPending() {
+  localStorage.removeItem('sonha:pendingScan');
+  if (typeof caches !== 'undefined') caches.delete(PENDING_CACHE).catch(() => {});
+}
+
+async function loadPending(meta) {
+  const c = await caches.open(PENDING_CACHE);
+  const files = [];
+  for (let i = 0; i < meta.n; i++) {
+    const r = await c.match(`./__pending/${i}`);
+    if (!r) break;
+    const b = await r.blob();
+    files.push(new File([b], decodeURIComponent(r.headers.get('X-Name') || `bill-${i}.jpg`), { type: b.type || 'image/jpeg' }));
+  }
+  return files;
+}
+
+/** Mở app: nếu lần trước iOS đóng app khi đang chụp / đang đọc bill thì báo và cho quét tiếp. */
+async function checkInterruptedScan() {
+  const picking = Number(localStorage.getItem('sonha:picking') || 0);
+  localStorage.removeItem('sonha:picking');
+  let meta = null;
+  try {
+    meta = JSON.parse(localStorage.getItem('sonha:pendingScan') || 'null');
+  } catch {}
+  if (meta && Date.now() - meta.at < 30 * 60000 && typeof caches !== 'undefined') {
+    const files = await loadPending(meta).catch(() => []);
+    if (files.length) {
+      resumeFiles = { files, screenshot: !!meta.screenshot };
+      const url = URL.createObjectURL(files[0]);
+      openSheet(`<div class="detail scan-sheet">
+        <h3>📷 Bill chưa quét xong</h3>
+        <img class="resume-thumb" src="${url}" alt="">
+        <div class="hint">iPhone đã đóng app khi đang đọc ${files.length > 1 ? `${files.length} ảnh` : 'bill'} (thường do máy thiếu bộ nhớ). Ảnh vẫn được giữ lại. Đóng bớt app chạy nền rồi bấm quét tiếp.</div>
+        <button class="btn primary" data-act="scanResume">Quét tiếp ảnh này</button>
+        <button class="btn" data-act="scanDiscard">Bỏ ảnh này</button>
+      </div>`);
+      return;
+    }
+  }
+  if (meta) clearPending();
+  if (picking && Date.now() - picking < 3 * 60000) {
+    openSheet(`<div class="detail scan-menu">
+      <h3>App vừa bị đóng khi mở camera?</h3>
+      <div class="hint">iPhone đôi khi tự đóng app web lúc mở camera nếu máy thiếu bộ nhớ. Đóng bớt app chạy nền rồi thử lại. Cách chắc ăn nhất: chụp bill bằng app Camera trước, rồi chọn ảnh trong thư viện.</div>
+      <button class="scan-choice" data-act="scanCamera"><span class="big">📷</span><span><b>Chụp lại</b><small>Mở camera</small></span></button>
+      <button class="scan-choice" data-act="scanPaper"><span class="big">🖼️</span><span><b>Chọn ảnh bill trong thư viện</b><small>Ít tốn bộ nhớ hơn</small></span></button>
+      <button class="scan-choice" data-act="scanScreens"><span class="big">📱</span><span><b>Ảnh chụp màn hình</b><small>Shopee, MoMo, ngân hàng…</small></span></button>
+    </div>`);
+  }
+}
 
 const titleCase = (s) =>
   s === s.toLocaleUpperCase('vi') ? s.toLocaleLowerCase('vi').replace(/(^|\s)(\S)/g, (_, a, b) => a + b.toLocaleUpperCase('vi')) : s;
@@ -1688,7 +1787,15 @@ const actions = {
   scanPaper: () => startScan('paper'),
   scanScreens: () => startScan('screens'),
   scanRetry: () => lastScan && runScan(lastScan.files, lastScan.screenshot),
-  scanManual: () => expenseForm({ category: lastScan?.screenshot ? 'online' : 'grocery' }),
+  scanManual: () => {
+    clearPending();
+    expenseForm({ category: lastScan?.screenshot ? 'online' : 'grocery' });
+  },
+  scanResume: () => resumeFiles && runScan(resumeFiles.files, resumeFiles.screenshot),
+  scanDiscard: () => {
+    clearPending();
+    closeSheet();
+  },
   priceBook: () => priceBook(),
   addItemRow: (d, el) => {
     const box = el.closest('.items-box');
@@ -1982,6 +2089,7 @@ const ICON = {
 S.onChange(scheduleRender);
 render();
 S.sync();
+checkInterruptedScan();
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
