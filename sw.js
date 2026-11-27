@@ -1,6 +1,6 @@
 // Service worker: chạy offline + nhận thông báo đẩy.
 // Khi sửa file giao diện, tăng số phiên bản để máy tải bản mới.
-const CACHE = 'sonha-v22';
+const CACHE = 'sonha-v23';
 const ASSETS = [
   './',
   'index.html',

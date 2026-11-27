@@ -13,7 +13,7 @@ const CATS = [
   { id: 'spirit', name: 'Cúng giỗ', icon: '🪔' },
   { id: 'other', name: 'Khác', icon: '📌' },
 ];
-const APP_VERSION = 'v1.20';
+const APP_VERSION = 'v1.21';
 
 const EXP_CATS = [
   { id: 'grocery', name: 'Đi chợ & siêu thị', icon: '🛒' },
@@ -1280,7 +1280,10 @@ function expenseForm(e = {}, scan = null) {
            <button type="button" class="btn danger ghost" data-act="delExpense" data-id="${e.id}">Xóa khoản chi</button>`
     }
   </form>`);
-  updateItemsSum($('#sheet form[data-form=expense]'));
+  const ef = $('#sheet form[data-form=expense]');
+  const one = ef && singleRow(ef);
+  if (one) one.dataset.linked = parseMoney(one.querySelector('[name=iAmt]').value) === (e.amount || null) || !e.amount ? '1' : '0';
+  updateItemsSum(ef);
 }
 
 function saveExpense(form) {
@@ -1363,6 +1366,27 @@ function updateItemsSum(form) {
     : `${items.length} món · ${money(sum)}${gap ? (known ? (gap < 0 ? ` · đã giảm ${money(-gap)}` : ` · + phí ${money(gap)}`) : ` · lệch ${money(Math.abs(gap))} so với Số tiền`) : ''}`;
 }
 
+// Khoản chi chỉ có 1 món: Số tiền và Thành tiền của món đi cùng nhau (sửa bên nào bên kia theo)
+function singleRow(form) {
+  const rows = form.querySelectorAll('.item-row');
+  return rows.length === 1 ? rows[0] : null;
+}
+
+function onAmountInput(input) {
+  const form = input.form;
+  const row = singleRow(form);
+  const amount = parseMoney(input.value);
+  // chỉ đi theo khi món đang khớp Số tiền cũ (người dùng chưa tự chỉnh món khác đi)
+  if (row && amount && row.dataset.linked !== '0') {
+    const qty = parseQty(row.querySelector('[name=iQty]').value) || 1;
+    row.querySelector('[name=iAmt]').value = fmtNum(amount);
+    row.querySelector('[name=iPrice]').value = fmtNum(amount / qty);
+    row.classList.remove('check');
+    form.dataset.adjust = '0';
+  }
+  updateItemsSum(form);
+}
+
 // sửa SL hoặc đơn giá → tự tính thành tiền
 function onItemInput(input) {
   const row = input.closest('.item-row');
@@ -1371,8 +1395,23 @@ function onItemInput(input) {
     const price = parseMoney(row.querySelector('[name=iPrice]').value);
     if (price != null) row.querySelector('[name=iAmt]').value = fmtNum(price * qty);
   }
+  // sửa thành tiền → đơn giá = thành tiền / SL
+  if (row && input.name === 'iAmt') {
+    const qty = parseQty(row.querySelector('[name=iQty]').value) || 1;
+    const amt = parseMoney(input.value);
+    if (amt != null) row.querySelector('[name=iPrice]').value = fmtNum(amt / qty);
+  }
   row?.classList.remove('check');
-  updateItemsSum(input.form);
+  // 1 món: sửa giá món thì Số tiền đi theo
+  const form = input.form;
+  if (row && singleRow(form) === row && row.dataset.linked !== '0') {
+    const amt = parseMoney(row.querySelector('[name=iAmt]').value);
+    if (amt) {
+      form.elements.amount.value = fmtNum(amt);
+      form.dataset.adjust = '0';
+    }
+  }
+  updateItemsSum(form);
 }
 
 /** Tên nơi mua đã dùng ở các khoản chi trước + danh bạ nơi mua. */
@@ -1989,7 +2028,7 @@ document.addEventListener('input', (e) => {
   if (e.target.matches('form[data-form=task] [name=title]')) autoPickSubj(e.target.form);
   if (e.target.matches('form[data-form=done] [name=amount]')) updatePriceHint(e.target.form);
   if (e.target.matches('.item-row input')) onItemInput(e.target);
-  if (e.target.matches('form[data-form=expense] [name=amount]')) updateItemsSum(e.target.form);
+  if (e.target.matches('form[data-form=expense] [name=amount]')) onAmountInput(e.target);
   if (e.target.matches('[name=priceQ]')) $('#sheet .price-list').innerHTML = priceRows(e.target.value);
   // chọn tên shop đã dùng → điền sẵn loại và link
   if (e.target.matches('[name=buyName]')) {
